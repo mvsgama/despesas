@@ -183,9 +183,17 @@ function carregar(){
   try{const t=localStorage.getItem(KEY);if(t){const o=JSON.parse(t);if(o&&o.desp)S=Object.assign(novoEstado(),o,{cfg:Object.assign(novoEstado().cfg,o.cfg||{})})}}catch(e){}
   try{const t=localStorage.getItem(KEY+'-sync');if(t)SY=Object.assign(SY,JSON.parse(t))}catch(e){}
   if(MODE==='web')SY.url=WEBURL;
+  normalizar();
 }
 function gravarLocal(){try{localStorage.setItem(KEY,JSON.stringify(S));return true}catch(e){toast('NÃO FOI POSSÍVEL SALVAR NO NAVEGADOR');return false}}
 function save(){S.saved=Date.now();gravarLocal();Sync.agendar()}
+const brutoDe=r=>r.bruto!=null&&r.bruto!==''?+r.bruto:+r.valor||0;
+function normalizar(){ // preenche o bruto de holerites lançados antes desta versão
+  for(const t of['A','F'])for(const r of S.rec){if(!r.hol||r.hol[0]!==t||r.bruto!=null||!r.conf||!r.conf.R)continue;
+    const g=re=>(r.conf.R.find(x=>re.test(x.item))||{}).hol;
+    if(t==='A'){const b=g(/^ADIANTAMENTO BRUTO/);if(b!=null)r.bruto=r2(b)}
+    else{const tv=g(/^SOMA DOS VENCIMENTOS/),a=S.rec.find(x=>x.hol==='A|'+r.hol.slice(2)),ad=a&&a.bruto!=null?a.bruto:g(/^ADIANTAMENTO JÁ RECEBIDO/)!=null?g(/^ADIANTAMENTO JÁ RECEBIDO/)/(1-((S.cfg.hol&&S.cfg.hol.aliq)||27.5)/100):0;if(tv!=null)r.bruto=r2(tv-ad)}}
+}
 function vazio(){return !S.desp.length&&!S.rec.length&&!S.inv.length}
 /* ---------- categorias ---------- */
 function classificar(desc){
@@ -363,12 +371,12 @@ const corCat=c=>{if(c==='OUTROS')return GRAY;const i=S.cfg.cats.findIndex(x=>x.n
 function vPainel(){
   const m=U.pMes,pm=addM(m,-1),fp=d=>!U.pPes||d.pessoa===U.pPes;
   const D=S.desp.filter(d=>d.mes===m&&fp(d)),Dp=S.desp.filter(d=>d.mes===pm&&fp(d)),sum=(a,f)=>a.reduce((s,d)=>s+(f(d)?d.valor:0),0);
-  const rec=sum(S.rec.filter(d=>d.mes===m&&fp(d)),()=>1),gas=sum(D,d=>d.tipo!=='invest'),gasP=sum(Dp,d=>d.tipo!=='invest'),car=sum(D,d=>d.tipo==='cartao'),res=sum(D,d=>d.tipo==='invest'),ab=sum(D,d=>d.status!=='Pago'),sal=rec-gas-res;
+  const recB=S.rec.filter(d=>d.mes===m&&fp(d)).reduce((s,d)=>s+brutoDe(d),0),rec=sum(S.rec.filter(d=>d.mes===m&&fp(d)),()=>1),gas=sum(D,d=>d.tipo!=='invest'),gasP=sum(Dp,d=>d.tipo!=='invest'),car=sum(D,d=>d.tipo==='cartao'),res=sum(D,d=>d.tipo==='invest'),ab=sum(D,d=>d.status!=='Pago'),sal=rec-gas-res;
   const vr=gasP?((gas-gasP)/gasP*100):null;
   const k=(l,v,c,ex)=>'<div class="kpi" style="border-left-color:'+c+'"><small>'+l+'</small><b>'+fmt(v)+'</b>'+(ex||'')+'</div>';
   let h='<div class="card"><div class="row"><label class="f">MÊS<select data-u="pMes">'+selMes(m)+'</select></label><label class="f">PESSOA<select data-u="pPes">'+opt('','TODAS',U.pPes)+pessoas().map(p=>opt(p,p,U.pPes)).join('')+'</select></label>'+
     '<label class="f">PERÍODO DO GRÁFICO<select data-u="pPer">'+opt(6,'6 MESES',U.pPer)+opt(12,'12 MESES',U.pPer)+opt(0,'TUDO',U.pPer)+'</select></label></div></div>';
-  h+='<div class="kpis">'+k('RECEITAS',rec,'#2e9d6b')+k('GASTOS (SEM RESERVA)',gas,'#c8642a',vr==null?'':'<i class="'+(vr>0?'neg':'pos')+'">'+(vr>0?'▲':'▼')+' '+Math.abs(vr).toFixed(1)+'% VS '+mlabel(pm)+'</i>')+k('CARTÃO DE CRÉDITO',car,'#1e5f8a')+k('RESERVA/INVESTIMENTO',res,'#6b7a3a')+
+  h+='<div class="kpis">'+k('RECEITAS (LÍQUIDO)',rec,'#2e9d6b',recB-rec>.005?'<i class="mut">BRUTO '+fmt(recB)+'</i>':'')+k('GASTOS (SEM RESERVA)',gas,'#c8642a',vr==null?'':'<i class="'+(vr>0?'neg':'pos')+'">'+(vr>0?'▲':'▼')+' '+Math.abs(vr).toFixed(1)+'% VS '+mlabel(pm)+'</i>')+k('CARTÃO DE CRÉDITO',car,'#1e5f8a')+k('RESERVA/INVESTIMENTO',res,'#6b7a3a')+
     '<div class="kpi" style="border-left-color:'+(sal<0?'#c0463a':'#2e9d6b')+'"><small>SALDO DO MÊS</small><b class="'+(sal<0?'neg':'pos')+'">'+fmt(sal)+'</b></div>'+k('AINDA NÃO PAGO',ab,'#c0463a')+'</div>';
   const pc={};D.filter(d=>d.tipo!=='invest').forEach(d=>pc[d.cat]=(pc[d.cat]||0)+d.valor);
   const dn=Object.entries(pc).sort((a,b)=>b[1]-a[1]).map(([l,v])=>({l,v,c:corCat(l)}));
@@ -466,11 +474,11 @@ function editar(d,f,val){
 }
 /* ---------- receitas ---------- */
 function vRec(){
-  const m=U.rMes,L=S.rec.filter(r=>r.mes===m),tot=L.reduce((s,r)=>s+r.valor,0);
+  const m=U.rMes,L=S.rec.filter(r=>r.mes===m),tot=L.reduce((s,r)=>s+r.valor,0);const bru=L.reduce((s,r)=>s+brutoDe(r),0);
   return '<div class="card"><div class="row"><label class="f">MÊS<select data-u="rMes">'+selMes(m,0,[addM(mesHoje(),1)])+'</select></label><button class="btn ok" data-a="rnovo">+ NOVA RECEITA</button><button class="btn sec" data-a="rcopia">COPIAR RECEITAS DO MÊS ANTERIOR</button></div></div>'+
-  '<div class="card"><div class="tw"><table class="t resp"><colgroup><col><col style="width:120px"><col style="width:160px"><col style="width:130px"><col style="width:120px"><col style="width:28px"></colgroup><thead><tr><th>DESCRIÇÃO</th><th>VALOR</th><th>PESSOA</th><th>DATA</th><th>REPETE TODO MÊS</th><th></th></tr></thead><tbody>'+
-  (L.length?L.map(r=>'<tr><td data-l="DESCRIÇÃO" class="wide"><div class="row" style="flex-wrap:nowrap;gap:4px"><input data-rid="'+r.id+'" data-f="desc" value="'+esc(r.desc)+'" style="flex:1">'+(r.conf?'<button class="tag '+(r.conf.v?'d':'n')+'" style="border:0;cursor:pointer;white-space:nowrap" data-a="rconf" data-rid="'+r.id+'">'+(r.conf.v?'⚠ '+r.conf.v+' A VERIFICAR':'✔ CONFERIDO')+'</button>':'')+'</div></td><td data-l="VALOR"><input class="v" data-rid="'+r.id+'" data-f="valor" value="'+fmtN(r.valor)+'"></td><td data-l="PESSOA"><input data-rid="'+r.id+'" data-f="pessoa" value="'+esc(r.pessoa)+'"></td><td data-l="DATA"><input type="date" data-rid="'+r.id+'" data-f="data" value="'+esc(r.data)+'"></td><td data-l="REPETE TODO MÊS"><input type="checkbox" style="width:auto;margin:4px 8px" data-rid="'+r.id+'" data-f="fixa"'+(r.fixa?' checked':'')+'></td><td class="xc"><button class="x" data-a="rdel" data-rid="'+r.id+'">×</button></td></tr>').join(''):'<tr><td colspan="6" style="padding:18px;text-align:center" class="mut">NENHUMA RECEITA EM '+mlabel(m)+'</td></tr>')+
-  '</tbody></table></div><div class="hint" style="margin-top:8px">Receita marcada em "repete todo mês" é lançada sozinha nos meses seguintes com o mesmo valor. Ao mudar o valor em um mês, os meses seguintes acompanham.</div><div class="tot"><div class="big" style="background:#2e9d6b"><small>TOTAL DE RECEITAS · '+mlabel(m)+'</small>'+fmt(tot)+'</div></div></div>';
+  '<div class="card"><div class="tw"><table class="t resp"><colgroup><col><col style="width:115px"><col style="width:115px"><col style="width:130px"><col style="width:120px"><col style="width:120px"><col style="width:28px"></colgroup><thead><tr><th>DESCRIÇÃO</th><th>VALOR BRUTO</th><th>VALOR LÍQUIDO</th><th>PESSOA</th><th>DATA</th><th>REPETE TODO MÊS</th><th></th></tr></thead><tbody>'+
+  (L.length?L.map(r=>'<tr><td data-l="DESCRIÇÃO" class="wide"><div class="row" style="flex-wrap:nowrap;gap:4px"><input data-rid="'+r.id+'" data-f="desc" value="'+esc(r.desc)+'" style="flex:1">'+(r.conf?'<button class="tag '+(r.conf.v?'d':'n')+'" style="border:0;cursor:pointer;white-space:nowrap" data-a="rconf" data-rid="'+r.id+'">'+(r.conf.v?'⚠ '+r.conf.v+' A VERIFICAR':'✔ CONFERIDO')+'</button>':'')+'</div></td><td data-l="VALOR BRUTO"><input class="v" data-rid="'+r.id+'" data-f="bruto" value="'+(r.bruto!=null?fmtN(r.bruto):'')+'" placeholder="'+fmtN(r.valor)+'" inputmode="decimal"></td><td data-l="VALOR LÍQUIDO"><input class="v" data-rid="'+r.id+'" data-f="valor" value="'+fmtN(r.valor)+'" inputmode="decimal"></td><td data-l="PESSOA"><input data-rid="'+r.id+'" data-f="pessoa" value="'+esc(r.pessoa)+'"></td><td data-l="DATA"><input type="date" data-rid="'+r.id+'" data-f="data" value="'+esc(r.data)+'"></td><td data-l="REPETE TODO MÊS"><input type="checkbox" style="width:auto;margin:4px 8px" data-rid="'+r.id+'" data-f="fixa"'+(r.fixa?' checked':'')+'></td><td class="xc"><button class="x" data-a="rdel" data-rid="'+r.id+'">×</button></td></tr>').join(''):'<tr><td colspan="7" style="padding:18px;text-align:center" class="mut">NENHUMA RECEITA EM '+mlabel(m)+'</td></tr>')+
+  '</tbody></table></div><div class="hint" style="margin-top:8px">Receita marcada em "repete todo mês" é lançada sozinha nos meses seguintes com o mesmo valor. Ao mudar o valor em um mês, os meses seguintes acompanham.</div><div class="hint">Valor bruto: antes dos descontos (INSS, IRRF etc.). Vem do holerite; nas outras receitas, deixe em branco se for igual ao líquido.</div><div class="tot"><div class="big" style="background:#16294a"><small>TOTAL BRUTO · '+mlabel(m)+'</small><span id="tot-bruto">'+fmt(bru)+'</span></div><div class="big" style="background:#c8642a"><small>DESCONTOS (INSS, IRRF ETC.)</small>'+fmt(bru-tot)+'</div><div class="big" style="background:#2e9d6b"><small>TOTAL LÍQUIDO · '+mlabel(m)+'</small><span id="tot-liq">'+fmt(tot)+'</span></div></div></div>';
 }
 /* ---------- categorias e backup ---------- */
 function vCfg(){
@@ -485,7 +493,7 @@ function vCfg(){
 function exportCsv(){
   const q=s=>'"'+String(s??'').replace(/"/g,'""')+'"',L=['MES;DESCRICAO;VALOR;TIPO;CATEGORIA;PESSOA;BANCO;DATA;VENCIMENTO;PAGAMENTO;STATUS;COMENTARIO'];
   [...S.desp].sort((a,b)=>a.mes.localeCompare(b.mes)).forEach(d=>L.push([d.mes,q(d.desc),fmtN(d.valor).replace(/\./g,''),TIPOS[d.tipo],q(d.cat),q(d.pessoa),q(d.banco),d.data,d.venc,d.pagto,stEf(d),q(d.obs)].join(';')));
-  L.push('','RECEITAS','MES;DESCRICAO;VALOR;PESSOA;DATA');S.rec.forEach(r=>L.push([r.mes,q(r.desc),fmtN(r.valor).replace(/\./g,''),q(r.pessoa),r.data].join(';')));
+  L.push('','RECEITAS','MES;DESCRICAO;VALOR BRUTO;VALOR LIQUIDO;PESSOA;DATA');S.rec.forEach(r=>L.push([r.mes,q(r.desc),fmtN(brutoDe(r)).replace(/\./g,''),fmtN(r.valor).replace(/\./g,''),q(r.pessoa),r.data].join(';')));
   baixar('controle-despesas-'+hoje()+'.csv','﻿'+L.join('\r\n'),'text/csv;charset=utf-8');
 }
 
@@ -795,7 +803,7 @@ const Sync={t:null,est:'',ocupado:false,
     try{await this.chamar('put',JSON.stringify(S));this.pend=false;this.mostra('ok')}catch(e){this.pend=true;this.mostra(navigator.onLine?'err':'off')}},
   async buscar(){if(!this.ativo()){this.mostra('');return}if(!navigator.onLine){this.mostra('off');return}
     try{const j=await this.chamar('get');const d=j&&j.dados?(typeof j.dados==='string'?JSON.parse(j.dados):j.dados):null;
-      if(d&&d.desp&&(+d.saved||0)>(+S.saved||0)){S=Object.assign(novoEstado(),d,{cfg:Object.assign(novoEstado().cfg,d.cfg||{})});gravarLocal();if(!document.querySelector('#modal[style*="flex"]'))render()}
+      if(d&&d.desp&&(+d.saved||0)>(+S.saved||0)){S=Object.assign(novoEstado(),d,{cfg:Object.assign(novoEstado().cfg,d.cfg||{})});normalizar();gravarLocal();if(!document.querySelector('#modal[style*="flex"]'))render()}
       else if((+S.saved||0)>((d&&+d.saved)||0)&&!vazio()){await this.enviar();return}
       this.mostra('ok')}catch(e){this.mostra(navigator.onLine?'err':'off')}}
 };
@@ -817,7 +825,9 @@ function lerHolerite(L,arq){
   const resto=L.slice(i),dp=/(\d{2})\/(\d{2})\/(\d{4})/.exec(resto.map(l=>l.t).join(' ')),il=resto.findIndex(l=>/VALOR L[IÍ]QUIDO/i.test(l.t));
   const nums=l=>l?l.its.filter(x=>reMoeda.test(x.s)).map(x=>parseNum(x.s)):[],tt=il>0?nums(resto[il-1]):[],lq=il>=0?nums(resto[il]).pop():NaN;
   const ib=resto.findIndex(l=>/BASE C[AÁ]LC/i.test(l.t)),bs=ib>=0?nums(resto[ib+1]):[];
-  return{arq,tipo,comp,itens,pagto:dp?dp[3]+'-'+dp[2]+'-'+dp[1]:'',totV:tt[0],totD:tt[1],liq:lq,baseRodape:bs[0],baseFgts:bs[2],baseIr:bs[5]};
+  const sx=(re,k)=>itens.filter(o=>re.test(norm(o.desc))).reduce((a,o)=>a+o[k],0),sv0=itens.reduce((a,o)=>a+o.v,0);
+  const bruto=r2(tipo==='F'?sv0-sx(/ADIANTAMENTO QUINZENAL|VALOR DO ADIANTAMENTO|^ADIANTAMENTO DE SAL/,'d')-sx(/IRRF DO ADIANTAMENTO/,'d'):sv0);
+  return{arq,tipo,comp,itens,bruto,pagto:dp?dp[3]+'-'+dp[2]+'-'+dp[1]:'',totV:tt[0],totD:tt[1],liq:lq,baseRodape:bs[0],baseFgts:bs[2],baseIr:bs[5]};
 }
 function inssTabela(v,txt){let prev=0,t=0;for(const f of String(txt).split(';')){const[a,p]=f.split(':').map(parseNum);if(isNaN(a)||isNaN(p))continue;if(v>prev)t+=(Math.min(v,a)-prev)*p/100;prev=a}return r2(t)}
 function conferirHolerite(H,P,adLiq){
@@ -857,7 +867,7 @@ function recalcHol(){const st=U.imp.st;if(!st||!st.hol)return;const P=HP();st.ho
 function formHol(){const P=HP(),st=U.imp.st;
   let h='<div class="card"><h3>HOLERITE EM PDF (ADIANTAMENTO E FOLHA MENSAL)</h3><input type="file" id="hol-file" accept=".pdf" multiple><div class="hint" style="margin-top:8px">Pode enviar os dois de uma vez. O PDF é lido aqui no navegador. O líquido de cada um é lançado em Receitas no mês da data de pagamento.</div></div>';
   if(st&&st.hol)h+=st.hol.map((x,i)=>{const H=x.H,nv=x.R.filter(r=>r.st==='ver').length,na=x.R.filter(r=>r.st==='av').length;
-    return '<div class="card"><div class="row" style="justify-content:space-between;margin-bottom:8px"><h3 style="margin:0"><input type="checkbox" data-hi="'+i+'"'+(x.on?' checked':'')+' style="width:auto"> '+esc(holNome(H))+' · LÍQUIDO '+fmt(H.liq)+'</h3><div class="row"><span class="mut">PAGO EM '+dlabel(H.pagto)+'</span><label class="f">LANÇAR EM<select data-hm="'+i+'">'+selMes(x.mes,0,[x.mes])+'</select></label>'+(x.ja?'<span class="tag u">JÁ LANÇADO: SERÁ ATUALIZADO</span>':'<span class="tag n">NOVO</span>')+'</div></div>'+
+    return '<div class="card"><div class="row" style="justify-content:space-between;margin-bottom:8px"><h3 style="margin:0"><input type="checkbox" data-hi="'+i+'"'+(x.on?' checked':'')+' style="width:auto"> '+esc(holNome(H))+' · BRUTO '+fmt(H.bruto)+' · LÍQUIDO '+fmt(H.liq)+'</h3><div class="row"><span class="mut">PAGO EM '+dlabel(H.pagto)+'</span><label class="f">LANÇAR EM<select data-hm="'+i+'">'+selMes(x.mes,0,[x.mes])+'</select></label>'+(x.ja?'<span class="tag u">JÁ LANÇADO: SERÁ ATUALIZADO</span>':'<span class="tag n">NOVO</span>')+'</div></div>'+
      '<div class="aviso '+(nv?'red':na?'org':'blue')+'"><span>'+(nv?'⚠ '+nv+' ITEM(NS) A VERIFICAR COM A EMPRESA':'✔ CÁLCULOS CONFEREM')+(na?' · '+na+' ITEM(NS) PARA VOCÊ AVALIAR':'')+'</span></div><div class="tw">'+tabelaConf(x.R)+'</div></div>'}).join('')+
     '<div class="card"><div class="row"><button class="btn ok" data-a="hol-gravar">LANÇAR EM RECEITAS</button><button class="btn sec" data-a="imp-cancela">CANCELAR</button></div></div>';
   h+='<div class="card"><h3>PARÂMETROS DA CONFERÊNCIA</h3><div class="fg hp">'+Object.keys(HPL).map(k=>'<label class="f">'+HPL[k]+'<input data-hp="'+k+'" value="'+(k==='dep'?P[k]:fmtN(P[k]))+'"></label>').join('')+'<label class="f wall">FAIXAS DO INSS (LIMITE:ALÍQUOTA %; A ÚLTIMA É O TETO)<input data-hp="inss" class="nocaps" value="'+esc(P.inss)+'"></label></div><div class="hint" style="margin-top:8px">Mesma lógica da planilha "Cálculo base Contracheque". O IRRF usa alíquota e parcela a deduzir de uma única faixa (a sua). Atualize quando mudar salário, tabela do INSS ou do IR. O vale-alimentação muda todo mês (dias úteis).</div></div>';
@@ -873,7 +883,7 @@ async function gravarHol(){
   const nv=sel.reduce((s,x)=>s+x.R.filter(r=>r.st==='ver').length,0);
   if(!await confirma('LANÇAR EM RECEITAS',sel.map(x=>esc(holNome(x.H))+' · <b>'+fmt(x.H.liq)+'</b> EM '+mlabel(x.mes)).join('<br>')+(nv?'<br><b class="neg">HÁ '+nv+' ITEM(NS) A VERIFICAR. LANÇAR MESMO ASSIM?</b>':''),'LANÇAR','ok'))return;
   for(const x of sel){const H=x.H,k=H.tipo+'|'+H.comp,conf={v:x.R.filter(r=>r.st==='ver').length,a:x.R.filter(r=>r.st==='av').length,R:x.R};let r=S.rec.find(o=>o.hol===k);
-    if(!r){r={id:uid(),pessoa:S.cfg.nome||'',fixa:false,hol:k};S.rec.push(r)}Object.assign(r,{mes:x.mes,desc:holNome(H),valor:r2(H.liq),data:H.pagto,conf})}
+    if(!r){r={id:uid(),pessoa:S.cfg.nome||'',fixa:false,hol:k};S.rec.push(r)}Object.assign(r,{mes:x.mes,desc:holNome(H),valor:r2(H.liq),bruto:H.bruto,data:H.pagto,conf})}
   save();const m=sel[sel.length-1].mes;U.imp.st=null;U.semBoasVindas=1;U.rMes=m;ir('rec');toast(sel.length+' RECEITA(S) LANÇADA(S)');
 }
 
@@ -943,12 +953,13 @@ document.addEventListener('change',async ev=>{
   if(ds.hi!=null){U.imp.st.hol[+ds.hi].on=t.checked;return}
   if(ds.hm!=null){U.imp.st.hol[+ds.hm].mes=t.value;return}
   if(t.id==='bk-file'&&t.files[0]){try{const o=JSON.parse(decodificar(await lerBuf(t.files[0])));if(!o||!Array.isArray(o.desp))throw 0;
-      if(await confirma('RESTAURAR BACKUP','SUBSTITUIR OS DADOS ATUAIS PELO BACKUP ('+o.desp.length+' LANÇAMENTOS, '+(o.rec||[]).length+' RECEITAS)?','RESTAURAR','ok')){S=Object.assign(novoEstado(),o,{cfg:Object.assign(novoEstado().cfg,o.cfg||{})});gerar();save();U.semBoasVindas=1;ir('lanc',{mes:mesHoje()});toast('BACKUP RESTAURADO')}}catch(e){toast('ARQUIVO DE BACKUP INVÁLIDO')}return}
+      if(await confirma('RESTAURAR BACKUP','SUBSTITUIR OS DADOS ATUAIS PELO BACKUP ('+o.desp.length+' LANÇAMENTOS, '+(o.rec||[]).length+' RECEITAS)?','RESTAURAR','ok')){S=Object.assign(novoEstado(),o,{cfg:Object.assign(novoEstado().cfg,o.cfg||{})});normalizar();gerar();save();U.semBoasVindas=1;ir('lanc',{mes:mesHoje()});toast('BACKUP RESTAURADO')}}catch(e){toast('ARQUIVO DE BACKUP INVÁLIDO')}return}
   if(ds.u){U[ds.u]=ds.u==='pPer'?+t.value:t.value;render();return}
   if(ds.ff&&ds.ff!=='q'){U.f[ds.ff]=t.value;U.f.ids=null;render();return}
   if(ds.id&&ds.f){const d=S.desp.find(x=>x.id===ds.id);if(d){editar(d,ds.f,t.value);setTimeout(()=>refoco(render),0)}return}
   if(ds.rid&&ds.f){const r=S.rec.find(x=>x.id===ds.rid);if(r){const seg=S.rec.filter(x=>x!==r&&x.auto&&x.fixa&&x.mes>r.mes&&rkey(x)===rkey(r));
       if(ds.f==='valor'){const v=parseNum(t.value);if(!isNaN(v)){r.valor=r2(Math.abs(v));if(r.fixa)seg.forEach(x=>x.valor=r.valor)}}
+      else if(ds.f==='bruto'){const v=parseNum(t.value);if(t.value.trim()===''||isNaN(v))delete r.bruto;else r.bruto=r2(Math.abs(v));if(r.fixa)seg.forEach(x=>{if(r.bruto==null)delete x.bruto;else x.bruto=r.bruto})}
       else if(ds.f==='fixa'){r.fixa=t.checked;if(!r.fixa)S.rec=S.rec.filter(x=>!seg.includes(x));else S.excl=S.excl.filter(e=>e.k!==rkey(r))}
       else if(ds.f==='desc'){const n=up(t.value);if(n){if(r.fixa)seg.forEach(x=>x.desc=n);r.desc=n}}
       else r[ds.f]=ds.f==='data'?t.value:up(t.value);
