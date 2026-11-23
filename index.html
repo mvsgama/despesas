@@ -12,6 +12,7 @@ h1,h2,h3{font-weight:800;letter-spacing:.3px;margin:0}
 header{background:linear-gradient(100deg,#0f1f3a,#1e3a5f 55%,#2c4a6e);color:#fff;padding:14px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 header h1{font-size:19px}
 header .who{opacity:.75;font-size:12px;font-weight:600}
+#btn-lock{background:rgba(255,255,255,.14);border:0;border-radius:20px;padding:4px 10px;font-size:14px;cursor:pointer}
 #sync{margin-left:auto;font-size:11px;font-weight:700;background:rgba(255,255,255,.14);padding:5px 10px;border-radius:20px;white-space:nowrap}
 #sync.ok{background:#2e9d6b}#sync.err{background:#c0463a}#sync.off{background:#8a6d1c}
 nav{background:#16294a;display:flex;overflow-x:auto;padding:0 12px;white-space:nowrap}
@@ -116,12 +117,24 @@ table.t tr.auto td:first-child{box-shadow:inset 3px 0 0 #8fb8d6}
  table.t.resp td.xc{grid-column:3;align-items:flex-end}
  header h1{font-size:16px}
 }
+#lock,#lockwarn{position:fixed;inset:0;display:none;align-items:center;justify-content:center;padding:14px}
+#lock{z-index:300;background:linear-gradient(140deg,#0f1f3a,#1e3a5f 55%,#2c4a6e)}
+#lockwarn{z-index:250;background:rgba(15,31,58,.6)}
+#lock .box,#lockwarn .box{background:#fff;border-radius:16px;padding:22px;max-width:380px;width:100%;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,.35)}
+#lockwarn .box{text-align:left;max-width:440px}
+#lockwarn h3,#lock h3{color:#16294a;font-size:15px;margin-bottom:8px}
+#lock-senha{width:100%;text-align:center;font-size:16px;padding:10px;text-transform:none}
+#lock-erro{color:#c0463a;font-weight:800;font-size:11px;min-height:16px;margin-top:6px}
+#lock-seg{color:#c0463a;font-size:16px}
+body.locked header,body.locked nav,body.locked main,body.locked #fab,body.locked #modal,body.locked #toast,body.locked #tip{display:none!important}
 </style></head><body>
-<header><h1>◆ CONTROLE DE DESPESAS</h1><span class="who" id="who"></span><span id="sync">☁ NÃO CONECTADO</span></header>
+<header><h1>◆ CONTROLE DE DESPESAS</h1><span class="who" id="who"></span><span id="sync">☁ NÃO CONECTADO</span><button id="btn-lock" data-a="lock" title="BLOQUEAR AGORA" style="display:none">🔒</button></header>
 <nav></nav>
 <main><div id="avisos"></div><div id="view"></div></main>
 <button id="fab" data-a="fab" title="LANÇAMENTO RÁPIDO">+</button>
 <div id="modal"></div><div id="toast"></div><div id="tip"></div>
+<div id="lockwarn"><div class="box"><h3>⏳ BLOQUEIO AUTOMÁTICO</h3><div class="mb">O APLICATIVO SERÁ BLOQUEADO EM <b id="lock-seg">60</b> SEGUNDOS POR FALTA DE USO.</div><div class="row end"><button class="btn ok" data-a="lock-cancela">CANCELAR BLOQUEIO AUTOMÁTICO</button></div></div></div>
+<div id="lock"><div class="box"><div style="font-size:42px">🔒</div><h3>◆ CONTROLE DE DESPESAS</h3><div class="mut" style="margin:6px 0 12px">APLICATIVO BLOQUEADO. DIGITE O CÓDIGO DE ACESSO.</div><input type="password" id="lock-senha" autocomplete="off" placeholder="código de acesso"><div id="lock-erro"></div><button class="btn ok big" data-a="lock-entrar" style="width:100%;margin-top:10px">DESBLOQUEAR</button></div></div>
 <script>
 'use strict';
 const MODE='web', KEY=MODE==='web'?'controle-despesas-app':'controle-despesas-marcus', WEBURL='https://script.google.com/macros/s/AKfycbwJI6Qt6LcGOpkBn5P7qMr4LYCninxJ-WOyaopD_TLnYGE_2sGImaHL8-_270_3ry15hA/exec';
@@ -316,6 +329,7 @@ const U={aba:'lanc',pMes:mesHoje(),pPes:'',pPer:12,
 function ir(aba,f){U.aba=aba;if(f)Object.assign(U.f,{pes:'',tipo:'',cat:'',banco:'',st:'',q:'',ids:null},f);render();window.scrollTo(0,0)}
 function render(){
   $('#who').textContent=S.cfg.nome?'· '+S.cfg.nome:'';
+  $('#btn-lock').style.display=SY.token?'':'none';
   $('nav').innerHTML=ABAS.map(([k,l])=>'<button data-aba="'+k+'" class="'+(U.aba===k?'on':'')+'">'+l+'</button>').join('');
   $('#avisos').innerHTML=avisosHtml();
   const v=$('#view');
@@ -501,7 +515,7 @@ function vCfg(){
   return '<div class="grid2"><div class="card"><h3>☁ SINCRONIZAÇÃO COM O CELULAR</h3><div class="fg"><label class="f w2">ENDEREÇO DO APP (LINK /EXEC)<input type="url" id="sy-url" value="'+esc(SY.url)+'" placeholder="https://script.google.com/macros/s/.../exec"></label><label class="f">CÓDIGO DE ACESSO<input type="password" id="sy-tok" value="'+esc(SY.token)+'"></label><div class="row" style="align-items:flex-end"><button class="btn" data-a="sy-salvar">CONECTAR</button><button class="btn sec" data-a="sy-agora">SINCRONIZAR AGORA</button></div></div><div class="hint" style="margin-top:8px">Preencha depois de publicar o app no Google Apps Script. Sem isso, os dados ficam só neste navegador.</div></div>'+
   '<div class="card"><h3>BACKUP</h3><div class="row"><button class="btn" data-a="bk-baixar">⬇ BAIXAR BACKUP (.JSON)</button><button class="btn sec" data-a="bk-rest">⬆ RESTAURAR BACKUP</button><button class="btn sec" data-a="bk-csv">EXPORTAR .CSV (EXCEL)</button><button class="btn red" data-a="bk-apagar">APAGAR TODOS OS DADOS</button><input type="file" id="bk-file" accept=".json" style="display:none"></div></div>'+
   '<div class="card"><h3>SEU NOME E LANÇAMENTOS AUTOMÁTICOS</h3><div class="fg"><label class="f w2">SEU NOME (PESSOA PADRÃO)<input data-c="nome" value="'+esc(c.nome)+'"></label><label class="f">REPETIR FIXAS (MESES À FRENTE)<input type="number" min="0" max="24" data-c="mesesFrente" value="'+c.mesesFrente+'"></label><label class="f">AVISAR VENCIMENTO (DIAS ANTES)<input type="number" min="0" max="60" data-c="diasAviso" value="'+c.diasAviso+'"></label><label class="f">RESERVA PADRÃO MENSAL (R$)<input data-c="reserva" value="'+fmtN(c.reserva)+'"></label></div><div class="hint" style="margin-top:8px">Reserva 0 desliga o lançamento automático da reserva.</div></div>'+
-  '<div class="card"><h3>BANCOS / CARTÕES</h3>'+(bancos().length?bancos().map(b=>'<div class="row" style="margin-bottom:5px"><input style="flex:1" data-banco="'+esc(b)+'" value="'+esc(b)+'"></div>').join('')+'<div class="hint">Renomear aqui muda em todos os meses.</div>':'<div class="mut">NENHUM BANCO CADASTRADO AINDA</div>')+'</div></div>'+
+  '<div class="card"><h3>🔒 BLOQUEIO DO APLICATIVO</h3><div class="row"><label class="f">BLOQUEAR APÓS (MINUTOS SEM USO)<input type="number" min="0" max="600" step="1" data-lk="1" value="'+Trava.min()+'" style="width:140px"></label><button class="btn sec" data-a="lock">🔒 BLOQUEAR AGORA</button></div><div class="hint" style="margin-top:8px">'+(SY.token?'Um minuto antes de bloquear aparece um aviso com o botão para cancelar. 0 desliga o bloqueio automático; o botão de cadeado continua funcionando. Para desbloquear, use o código de acesso. O app sempre abre bloqueado.':'<b>Bloqueio desligado neste aparelho:</b> conecte a sincronização (endereço e código de acesso) para ativar. Sem o código guardado, não há senha para conferir.')+'</div></div>'+'<div class="card"><h3>BANCOS / CARTÕES</h3>'+(bancos().length?bancos().map(b=>'<div class="row" style="margin-bottom:5px"><input style="flex:1" data-banco="'+esc(b)+'" value="'+esc(b)+'"></div>').join('')+'<div class="hint">Renomear aqui muda em todos os meses.</div>':'<div class="mut">NENHUM BANCO CADASTRADO AINDA</div>')+'</div></div>'+
   '<div class="card" style="margin-top:14px"><h3>CATEGORIAS E PALAVRAS-CHAVE</h3>'+c.cats.map((x,i)=>'<div class="cat"><input data-catn="'+i+'" value="'+esc(x.n)+'"'+(x.n==='OUTROS'?' disabled':'')+'><textarea data-catk="'+i+'" placeholder="PALAVRAS SEPARADAS POR VÍRGULA">'+esc(x.k.join(', '))+'</textarea>'+(x.n==='OUTROS'?'<span></span>':'<button class="x" data-a="cat-del" data-i="'+i+'">×</button>')+'</div>').join('')+
   '<div class="row"><button class="btn ok" data-a="cat-add">+ ADICIONAR CATEGORIA</button><button class="btn sec" data-a="cat-recl">RECLASSIFICAR O QUE ESTÁ EM OUTROS</button></div></div>';
 }
@@ -841,7 +855,8 @@ async function pedirCodigo(){const r=await modal('CÓDIGO DE ACESSO','<label cla
 const HP0={base:0,peric:0,dep:0,dedDep:189.59,aliq:27.5,parc:908.73,pctAd:40,sind:0,vaDia:0,cafeDia:0,assid:0,inss:'1621:7,5; 2902,84:9; 4354,27:12; 8475,55:14'};
 const HPL={base:'SALÁRIO BASE (R$)',peric:'PERICULOSIDADE (%)',dep:'Nº DE DEPENDENTES',dedDep:'DEDUÇÃO POR DEPENDENTE (R$)',aliq:'ALÍQUOTA DO IRRF (%)',parc:'PARCELA A DEDUZIR DO IRRF (R$)',pctAd:'ADIANTAMENTO (% DO SALÁRIO BASE)',sind:'SINDICATO (R$)',vaDia:'VALE-ALIMENTAÇÃO POR DIA ÚTIL (R$)',cafeDia:'CAFÉ POR DIA ÚTIL (R$)',assid:'ASSIDUIDADE SEM FALTAS (R$)'};
 function diasUteis(a,b){let n=0;if(!a||!b||a>b)return 0;for(let d=a,i=0;d<=b&&i<400;d=addD(d,1),i++){const w=new Date(d+'T12:00:00').getDay();if(w>0&&w<6)n++}return n}
-function vaComp(comp){const o=(S.cfg.holVA||{})[comp]||{},ini=o.ini||comp+'-16',fim=o.fim||addM(comp,1)+'-15',sug=diasUteis(ini,fim);return{ini,fim,sug,dias:o.dias!=null?o.dias:sug,manual:o.dias!=null&&o.dias!==sug,va:o.va,cafe:o.cafe,assid:o.assid,diasInf:o.dias}}
+function vaComp(comp,H){const o=(S.cfg.holVA||{})[comp]||{},ini=o.ini||comp+'-16',fim=o.fim||addM(comp,1)+'-15',sug=diasUteis(ini,fim),oc=H?H.itens.filter(x=>/FALTA|ATRASO|ATESTADO/.test(norm(x.desc))).map(x=>x.desc):[];
+  return{ini,fim,sug,dias:o.dias!=null?o.dias:sug,manual:o.dias!=null&&o.dias!==sug,va:o.va,cafe:o.cafe,assid:o.assid,diasInf:o.dias,ocorAuto:oc.length>0,ocorItens:oc,ocor:o.ocor!=null?!!o.ocor:oc.length>0,ocorManual:o.ocor!=null&&!!o.ocor!==(oc.length>0)}}
 const HP=()=>Object.assign({},HP0,S.cfg.hol||{});
 const reMoeda=/^-?\d{1,3}(?:\.\d{3})*,\d{2,3}$|^-?\d+,\d{2,3}$/;
 function lerHolerite(L,arq){
@@ -882,7 +897,7 @@ function conferirHolerite(H,P,adLiq,V){
       if(P.vaDia||V.va!=null){const it='VALE-ALIMENTAÇÃO DEPOSITADO ('+fmtN(P.vaDia)+' × '+V.dias+' DIAS)';V.va!=null?add(it,vaE,V.va,0,per):inf(it,vaE,'INFORME O VALOR DEPOSITADO · '+per)}
       if(P.cafeDia||V.cafe!=null){const it='CAFÉ DEPOSITADO ('+fmtN(P.cafeDia)+' × '+V.dias+' DIAS)';V.cafe!=null?add(it,cfE,V.cafe,0,per):inf(it,cfE,'INFORME O VALOR DEPOSITADO · '+per)}
       if(vaD||vaE!=null)add('DESCONTO ALIMENTAÇÃO NO HOLERITE (20% DO VA ESPERADO)',vaE!=null?vaE*.2:null,vaD,0,vaE==null?'EQUIVALE A UM VA DE '+fmt(vaD/.2)+'; INFORME O VA POR DIA NOS PARÂMETROS':'O CAFÉ NÃO ENTRA NO DESCONTO');
-      if(P.assid||V.assid!=null){const temFalta=H.itens.some(o=>/FALTA/.test(norm(o.desc))&&o.d),esp=temFalta?null:(P.assid||null),nt=temFalta?'HÁ FALTA NO HOLERITE: AVALIE O VALOR':'SEM FALTA NO HOLERITE';V.assid!=null?add('ASSIDUIDADE DEPOSITADA',esp,V.assid,0,nt):inf('ASSIDUIDADE DEPOSITADA',esp,'INFORME O VALOR DEPOSITADO · '+nt)}
+      if(P.assid||V.assid!=null){const esp=V.ocor?0:(P.assid||null),nt=V.ocor?'HOUVE FALTA, ATRASO OU ATESTADO'+(V.ocorItens.length?' (NO HOLERITE: '+V.ocorItens.join(', ')+')':' (MARCADO POR VOCÊ)')+': NÃO HÁ ASSIDUIDADE':'SEM FALTA, ATRASO OU ATESTADO'+(V.ocorManual?' (MARCADO POR VOCÊ)':'')+' · PAGA NO CARTÃO DO VR';V.assid!=null?add('ASSIDUIDADE DEPOSITADA',esp,V.assid,0,nt):inf('ASSIDUIDADE DEPOSITADA',esp,'INFORME O VALOR DEPOSITADO · '+nt)}
     }
     const adEsp=adLiq!=null?adLiq:base?r2(base*P.pctAd/100)-r2(base*P.pctAd/100*al):null;
     if(adD||adEsp)add('ADIANTAMENTO JÁ RECEBIDO (DESCONTADO)',adEsp,adD,0,adLiq!=null?'LÍQUIDO DO HOLERITE DE ADIANTAMENTO '+H.comp.slice(5)+'/'+H.comp.slice(0,4):'CALCULADO: '+fmtN(P.pctAd)+'% DO BASE MENOS IRRF');
@@ -894,16 +909,32 @@ function conferirHolerite(H,P,adLiq,V){
   add('SOMA DOS VENCIMENTOS',sv,H.totV||0);add('SOMA DOS DESCONTOS',sd,H.totD||0);add('LÍQUIDO (VENCIMENTOS − DESCONTOS)',sv-sd,H.liq||0);
   return R;
 }
-const HST={ok:['CONFERE','n'],arr:['CONFERE (ARREDONDAMENTO)','n'],ver:['VERIFICAR','d'],av:['AVALIAR','u']};
-function tabelaConf(R){return '<table class="t"><colgroup><col><col style="width:110px"><col style="width:110px"><col style="width:90px"><col style="width:170px"></colgroup><thead><tr><th>ITEM</th><th>ESPERADO</th><th>HOLERITE / REAL</th><th>DIFERENÇA</th><th>SITUAÇÃO</th></tr></thead><tbody>'+
-  R.map(r=>'<tr><td style="padding:5px 4px"><b>'+esc(r.item)+'</b>'+(r.nota?'<div class="hint">'+esc(r.nota)+'</div>':'')+'</td><td style="text-align:right">'+(r.esp==null?'—':fmtN(r.esp))+'</td><td style="text-align:right;font-weight:700">'+(r.hol==null?'—':fmtN(r.hol))+'</td><td style="text-align:right" class="'+(r.st==='ver'?'neg':'')+'">'+(r.esp==null||r.hol==null?'—':fmtN(r.hol-r.esp))+'</td><td><span class="tag '+HST[r.st][1]+'">'+HST[r.st][0]+'</span></td></tr>').join('')+'</tbody></table>'}
+const HST={ok:['CONFERE','n'],arr:['CONFERE (ARREDONDAMENTO)','n'],ver:['VERIFICAR','d'],av:['AVALIAR','u'],vp:['VERIFICADO POR VOCÊ','n']};
+const chaveConf=item=>norm(String(item).split(' (')[0]);
+function tabelaConf(R,rid){return '<table class="t"><colgroup><col><col style="width:100px"><col style="width:100px"><col style="width:86px"><col style="width:'+(rid?'250':'170')+'px"></colgroup><thead><tr><th>ITEM</th><th>ESPERADO</th><th>HOLERITE / REAL</th><th>DIFERENÇA</th><th>SITUAÇÃO</th></tr></thead><tbody>'+
+  R.map(r=>{const k=esc(chaveConf(r.item));let ac='';if(rid&&(r.st==='ver'||r.st==='av'))ac='<div class="row" style="margin-top:4px;gap:4px;flex-wrap:nowrap"><input data-vobs="'+k+'" class="nocaps" placeholder="observação (opcional)" style="flex:1;font-size:10px;padding:3px 5px;border:1px solid #cfd7e2;background:#fff"><button class="btn sm ok" data-a="vf" data-rid="'+rid+'" data-k="'+k+'">VERIFICADO</button></div>';
+    if(rid&&r.st==='vp')ac='<div style="margin-top:3px"><button class="btn sm sec" data-a="vf-undo" data-rid="'+rid+'" data-k="'+k+'">DESFAZER</button></div>';
+    return '<tr><td style="padding:5px 4px"><b>'+esc(r.item)+'</b>'+(r.nota?'<div class="hint">'+esc(r.nota)+'</div>':'')+'</td><td style="text-align:right">'+(r.esp==null?'—':fmtN(r.esp))+'</td><td style="text-align:right;font-weight:700">'+(r.hol==null?'—':fmtN(r.hol))+'</td><td style="text-align:right" class="'+(r.st==='ver'?'neg':'')+'">'+(r.esp==null||r.hol==null?'—':fmtN(r.hol-r.esp))+'</td><td style="overflow:visible"><span class="tag '+HST[r.st][1]+'">'+HST[r.st][0]+'</span>'+ac+'</td></tr>'}).join('')+'</tbody></table>'}
+function recalcRec(r){ // refaz a conferência de uma receita já lançada, a partir do holerite guardado
+  if(!r||!r.H)return false;const H=r.H,V=H.tipo==='F'?vaComp(H.comp,H):null,a=S.rec.find(x=>x.hol==='A|'+H.comp);
+  const R=conferirHolerite(H,HP(),H.tipo==='F'?(a?a.valor:null):null,V),vf=r.verif||{};
+  for(const x of R){const v=vf[chaveConf(x.item)];if(v&&(x.st==='ver'||x.st==='av')){x.st='vp';x.nota=(x.nota?x.nota+' · ':'')+'VERIFICADO EM '+dlabel(v.d)+(v.o?': '+up(v.o):'')}}
+  r.conf={v:R.filter(x=>x.st==='ver').length,a:R.filter(x=>x.st==='av').length,R};if(V)r.va={ini:V.ini,fim:V.fim,dias:V.dias};return true}
+function abrirConf(rid){
+  const r=S.rec.find(x=>x.id===rid);if(!r||!r.conf)return;U.confRid=rid;if(r.H)recalcRec(r);const M=$('#modal'),H=r.H,V=H&&H.tipo==='F'?vaComp(H.comp,H):null;M.onclick=null;
+  M.innerHTML='<div class="box" style="max-width:900px"><h3>CONFERÊNCIA · '+esc(r.desc)+'</h3><div class="mb">'+
+   (r.conf.v?'<div class="aviso red"><span>⚠ '+r.conf.v+' ITEM(NS) A VERIFICAR</span></div>':'<div class="aviso blue"><span>✔ SEM PENDÊNCIAS'+(r.conf.a?' · '+r.conf.a+' ITEM(NS) PARA AVALIAR':'')+'</span></div>')+
+   (V?blocoVA(H.comp,V):'')+(H?'':'<div class="hint" style="margin:6px 0">Para editar os dias úteis e marcar itens como verificados aqui, importe o PDF deste holerite mais uma vez (Importar → Importar holerite).</div>')+
+   '<div class="tw">'+tabelaConf(r.conf.R,H?rid:null)+'</div></div><div class="row end"><button class="btn sec" data-a="conf-fechar">FECHAR</button></div></div>';
+  M.style.display='flex';
+}
 const holNome=H=>(H.tipo==='A'?'ADIANTAMENTO':H.tipo==='F'?'SALÁRIO (FOLHA':'PAGAMENTO')+(H.tipo==='F'?' '+H.comp.slice(5)+'/'+H.comp.slice(0,4)+')':' ('+H.comp.slice(5)+'/'+H.comp.slice(0,4)+')');
 function recalcHol(){const st=U.imp.st;if(!st||!st.hol)return;const P=HP();st.hol.sort((a,b)=>a.H.comp.localeCompare(b.H.comp)||(a.H.tipo==='A'?-1:1));
-  for(const x of st.hol){const k='A|'+x.H.comp,lote=st.hol.find(y=>y.H.tipo==='A'&&y.H.comp===x.H.comp),ja=S.rec.find(r=>r.hol===k);x.V=x.H.tipo==='F'?vaComp(x.H.comp):null;x.R=conferirHolerite(x.H,P,x.H.tipo==='F'?(lote?lote.H.liq:ja?ja.valor:null):null,x.V);x.ja=S.rec.some(r=>r.hol===x.H.tipo+'|'+x.H.comp)}}
+  for(const x of st.hol){const k='A|'+x.H.comp,lote=st.hol.find(y=>y.H.tipo==='A'&&y.H.comp===x.H.comp),ja=S.rec.find(r=>r.hol===k);x.V=x.H.tipo==='F'?vaComp(x.H.comp,x.H):null;x.R=conferirHolerite(x.H,P,x.H.tipo==='F'?(lote?lote.H.liq:ja?ja.valor:null):null,x.V);x.ja=S.rec.some(r=>r.hol===x.H.tipo+'|'+x.H.comp)}}
 function blocoVA(comp,V){const i=(k,l,v,ph,tp)=>'<label class="f">'+l+'<input '+(tp?'type="'+tp+'" ':'inputmode="decimal" ')+'data-hv="'+comp+'" data-k="'+k+'" value="'+esc(v)+'"'+(ph?' placeholder="'+ph+'"':'')+'></label>',n=v=>v!=null?fmtN(v):'';
   return '<div style="border:1px solid #e1e6ed;border-radius:10px;padding:10px;margin:8px 0"><b style="font-size:11px;color:#16294a">VALE-ALIMENTAÇÃO DA COMPETÊNCIA '+comp.slice(5)+'/'+comp.slice(0,4)+'</b><div class="fg hp" style="margin-top:6px">'+
    i('ini','UTILIZAÇÃO: INÍCIO',V.ini,'','date')+i('fim','UTILIZAÇÃO: FIM',V.fim,'','date')+i('dias','DIAS ÚTEIS (SUGERIDO: '+V.sug+')',V.diasInf!=null?V.diasInf:'',String(V.sug))+
-   i('va','VA DEPOSITADO (R$)',n(V.va),'0,00')+i('cafe','CAFÉ DEPOSITADO (R$)',n(V.cafe),'0,00')+i('assid','ASSIDUIDADE DEPOSITADA (R$)',n(V.assid),'0,00')+'</div><div class="hint" style="margin-top:6px">Dias úteis em branco = usa a sugestão (segunda a sexta no período; feriados não são descontados). O número que você digitar vale só para esta competência.</div></div>'}
+   i('va','VA DEPOSITADO (R$)',n(V.va),'0,00')+i('cafe','CAFÉ DEPOSITADO (R$)',n(V.cafe),'0,00')+i('assid','ASSIDUIDADE DEPOSITADA (R$)',n(V.assid),'0,00')+'</div><label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:11px;font-weight:700"><input type="checkbox" data-hv="'+comp+'" data-k="ocor"'+(V.ocor?' checked':'')+' style="width:auto"> HOUVE FALTA, ATRASO OU ATESTADO NO PERÍODO (SEM ASSIDUIDADE)'+(V.ocorAuto?' <span class="mut">· O HOLERITE ACUSA: '+esc(V.ocorItens.join(', '))+'</span>':'')+'</label><div class="hint" style="margin-top:6px">Dias úteis em branco = usa a sugestão (segunda a sexta no período; feriados não são descontados). O número que você digitar vale só para esta competência.</div></div>'}
 function formHol(){const P=HP(),st=U.imp.st;
   let h='<div class="card"><h3>HOLERITE EM PDF (ADIANTAMENTO E FOLHA MENSAL)</h3><input type="file" id="hol-file" accept=".pdf" multiple><div class="hint" style="margin-top:8px">Pode enviar os dois de uma vez. O PDF é lido aqui no navegador. O líquido de cada um é lançado em Receitas no mês da data de pagamento.</div></div>';
   if(st&&st.hol)h+=st.hol.map((x,i)=>{const H=x.H,nv=x.R.filter(r=>r.st==='ver').length,na=x.R.filter(r=>r.st==='av').length;
@@ -923,7 +954,8 @@ async function gravarHol(){
   const nv=sel.reduce((s,x)=>s+x.R.filter(r=>r.st==='ver').length,0);
   if(!await confirma('LANÇAR EM RECEITAS',sel.map(x=>esc(holNome(x.H))+' · <b>'+fmt(x.H.liq)+'</b> EM '+mlabel(x.mes)).join('<br>')+(nv?'<br><b class="neg">HÁ '+nv+' ITEM(NS) A VERIFICAR. LANÇAR MESMO ASSIM?</b>':''),'LANÇAR','ok'))return;
   for(const x of sel){const H=x.H,k=H.tipo+'|'+H.comp,conf={v:x.R.filter(r=>r.st==='ver').length,a:x.R.filter(r=>r.st==='av').length,R:x.R};let r=S.rec.find(o=>o.hol===k);
-    if(!r){r={id:uid(),pessoa:S.cfg.nome||'',fixa:false,hol:k};S.rec.push(r)}Object.assign(r,{mes:x.mes,desc:holNome(H),valor:r2(H.liq),bruto:H.bruto,data:H.pagto,conf});if(x.V)r.va={ini:x.V.ini,fim:x.V.fim,dias:x.V.dias}}
+    if(!r){r={id:uid(),pessoa:S.cfg.nome||'',fixa:false,hol:k};S.rec.push(r)}Object.assign(r,{mes:x.mes,desc:holNome(H),valor:r2(H.liq),bruto:H.bruto,data:H.pagto,conf,H});if(x.V)r.va={ini:x.V.ini,fim:x.V.fim,dias:x.V.dias}}
+  for(const x of sel)recalcRec(S.rec.find(o=>o.hol===x.H.tipo+'|'+x.H.comp));
   gerar();
   save();const m=sel[sel.length-1].mes;U.imp.st=null;U.semBoasVindas=1;U.rMes=m;ir('rec');toast(sel.length+' RECEITA(S) LANÇADA(S)');
 }
@@ -961,7 +993,13 @@ document.addEventListener('click',async ev=>{
     case 'ft-ler-txt':lerFat(null);break;
     case 'ft-gravar':gravarFat();break;
     case 'hol-gravar':gravarHol();break;
-    case 'rconf':{const r=S.rec.find(x=>x.id===b.dataset.rid);if(r&&r.conf)modal('CONFERÊNCIA · '+r.desc,'<div class="tw" style="min-width:0">'+tabelaConf(r.conf.R)+'</div>',[['FECHAR','0','sec']]);break}
+    case 'rconf':abrirConf(b.dataset.rid);break;
+    case 'conf-fechar':U.confRid=null;$('#modal').style.display='none';render();break;
+    case 'vf':{const r=S.rec.find(x=>x.id===b.dataset.rid);if(!r)break;const o=$('[data-vobs="'+b.dataset.k+'"]');r.verif=r.verif||{};r.verif[b.dataset.k]={d:hoje(),o:o?o.value.trim():''};recalcRec(r);save();abrirConf(r.id);break}
+    case 'vf-undo':{const r=S.rec.find(x=>x.id===b.dataset.rid);if(!r||!r.verif)break;delete r.verif[b.dataset.k];recalcRec(r);save();abrirConf(r.id);break}
+    case 'lock':Trava.bloquear();break;
+    case 'lock-cancela':Trava.cancelarAviso();break;
+    case 'lock-entrar':Trava.tentar();break;
     case 'iv-novo':formInv();break;
     case 'iv-edit':formInv(iv);break;
     case 'iv-mov':movInv(iv);break;
@@ -996,7 +1034,9 @@ document.addEventListener('change',async ev=>{
   if(t.id==='bk-file'&&t.files[0]){try{const o=JSON.parse(decodificar(await lerBuf(t.files[0])));if(!o||!Array.isArray(o.desp))throw 0;
       if(await confirma('RESTAURAR BACKUP','SUBSTITUIR OS DADOS ATUAIS PELO BACKUP ('+o.desp.length+' LANÇAMENTOS, '+(o.rec||[]).length+' RECEITAS)?','RESTAURAR','ok')){S=Object.assign(novoEstado(),o,{cfg:Object.assign(novoEstado().cfg,o.cfg||{})});normalizar();gerar();save();U.semBoasVindas=1;ir('lanc',{mes:mesHoje()});toast('BACKUP RESTAURADO')}}catch(e){toast('ARQUIVO DE BACKUP INVÁLIDO')}return}
   if(ds.a10){vincular10(t.value);gerar();save();render();toast(t.value?'DESPESA VINCULADA AOS 10%':'VÍNCULO REMOVIDO');return}
-  if(ds.hv){S.cfg.holVA=S.cfg.holVA||{};const o=S.cfg.holVA[ds.hv]=S.cfg.holVA[ds.hv]||{},k=ds.k;if(k==='ini'||k==='fim'){if(t.value)o[k]=t.value;else delete o[k]}else{const v=parseNum(t.value);if(t.value.trim()===''||isNaN(v)||v<0)delete o[k];else o[k]=k==='dias'?Math.round(v):r2(v)}save();recalcHol();render();return}
+  if(ds.hv){S.cfg.holVA=S.cfg.holVA||{};const o=S.cfg.holVA[ds.hv]=S.cfg.holVA[ds.hv]||{},k=ds.k;if(k==='ocor')o.ocor=t.checked;else if(k==='ini'||k==='fim'){if(t.value)o[k]=t.value;else delete o[k]}else{const v=parseNum(t.value);if(t.value.trim()===''||isNaN(v)||v<0)delete o[k];else o[k]=k==='dias'?Math.round(v):r2(v)}
+    for(const r of S.rec)if(r.H&&r.H.comp===ds.hv)recalcRec(r);save();recalcHol();if(U.confRid)abrirConf(U.confRid);else render();return}
+  if(ds.lk){S.cfg.lockMin=Math.max(0,parseNum(t.value)||0);save();render();toast(S.cfg.lockMin?'BLOQUEIO APÓS '+S.cfg.lockMin+' MIN SEM USO':'BLOQUEIO AUTOMÁTICO DESLIGADO');return}
   if(ds.u){U[ds.u]=ds.u==='pPer'?+t.value:t.value;render();return}
   if(ds.ff&&ds.ff!=='q'){U.f[ds.ff]=t.value;U.f.ids=null;render();return}
   if(ds.id&&ds.f){const d=S.desp.find(x=>x.id===ds.id);if(d){editar(d,ds.f,t.value);setTimeout(()=>refoco(render),0)}return}
@@ -1023,16 +1063,33 @@ document.addEventListener('change',async ev=>{
   if(ds.sal){const a=S.inv.find(x=>x.id===ds.sal);if(a){a.saldos=a.saldos||{};const v=parseNum(t.value);if(t.value.trim()===''||isNaN(v))delete a.saldos[ds.m];else a.saldos[ds.m]=r2(v);save();render()}return}
 });
 let qT;document.addEventListener('input',ev=>{if(ev.target.dataset.ff==='q'){U.f.q=ev.target.value;U.f.ids=null;clearTimeout(qT);qT=setTimeout(()=>refoco(render),250)}});
-document.addEventListener('keydown',ev=>{if(ev.key==='Enter'&&ev.target.tagName==='INPUT'&&(ev.target.dataset.id||ev.target.dataset.rid))ev.target.blur();if(ev.key==='Escape'){const M=$('#modal');if(M.style.display==='flex'){const c=M.querySelector('[data-mv="0"]');if(c)c.click()}}});
+document.addEventListener('keydown',ev=>{if(ev.key==='Enter'&&ev.target.id==='lock-senha'){Trava.tentar();return}if(ev.key==='Enter'&&ev.target.tagName==='INPUT'&&(ev.target.dataset.id||ev.target.dataset.rid))ev.target.blur();if(ev.key==='Escape'){const M=$('#modal');if(M.style.display==='flex'){const c=M.querySelector('[data-mv="0"],[data-a="conf-fechar"]');if(c)c.click()}}});
 const tip=()=>$('#tip');
 document.addEventListener('mousemove',ev=>{const t=ev.target.closest&&ev.target.closest('[data-tip]'),el=tip();if(!t){el.style.display='none';return}el.textContent=t.dataset.tip;el.style.display='block';el.style.left=Math.min(window.innerWidth-el.offsetWidth-8,ev.clientX+12)+'px';el.style.top=(ev.clientY-34)+'px'});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)Sync.buscar()});
 window.addEventListener('online',()=>{Sync.pend?Sync.enviar():Sync.buscar()});
 window.addEventListener('offline',()=>{if(Sync.ativo())Sync.mostra('off')});
+/* ---------- bloqueio do aplicativo ---------- */
+const Trava={on:false,ult:Date.now(),aviso:false,
+  ativo(){return !!SY.token},
+  min(){const m=+S.cfg.lockMin;return isNaN(m)||S.cfg.lockMin==null?5:m},
+  bloquear(){if(!this.ativo()){toast('CONECTE A SINCRONIZAÇÃO PARA USAR O BLOQUEIO');return}this.on=true;this.aviso=false;$('#lockwarn').style.display='none';document.body.classList.add('locked');$('#lock-erro').textContent='';const i=$('#lock-senha');i.value='';$('#lock').style.display='flex';setTimeout(()=>{try{i.focus()}catch(e){}},50)},
+  liberar(){this.on=false;this.ult=Date.now();document.body.classList.remove('locked');$('#lock').style.display='none';$('#lock-senha').value='';render()},
+  async tentar(){const v=$('#lock-senha').value.trim();if(!v)return;if(v===SY.token){this.liberar();return}
+    // o código pode ter sido trocado no Apps Script: confere com o servidor antes de recusar
+    if(navigator.onLine&&(MODE==='gas'||SY.url)){const ant=SY.token;try{$('#lock-erro').textContent='CONFERINDO…';SY.token=v;await Sync.chamar('get');try{localStorage.setItem(KEY+'-sync',JSON.stringify(SY))}catch(e){}this.liberar();Sync.buscar();return}catch(e){SY.token=ant}}
+    $('#lock-erro').textContent='CÓDIGO INCORRETO';$('#lock-senha').value='';$('#lock-senha').focus()},
+  mexeu(){if(this.on||this.aviso)return;this.ult=Date.now()},
+  cancelarAviso(){this.aviso=false;this.ult=Date.now();$('#lockwarn').style.display='none'},
+  tick(){if(this.on||!this.ativo())return;const lim=this.min()*60000;if(!(lim>0))return;const par=Date.now()-this.ult;
+    if(par>=lim+60000){this.bloquear();return}
+    if(par>=lim){this.aviso=true;$('#lockwarn').style.display='flex';$('#lock-seg').textContent=Math.max(0,Math.ceil((lim+60000-par)/1000))}},
+  iniciar(){for(const e of['pointerdown','keydown','wheel','touchstart','scroll','input'])document.addEventListener(e,()=>this.mexeu(),{passive:true,capture:true});setInterval(()=>this.tick(),1000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)this.tick()})}
+};
 /* ---------- início ---------- */
 function preCarregar(){if(MODE!=='web'||!navigator.onLine)return;for(const u of[CDN_XLSX,'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs','https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs'])fetch(u).catch(()=>{})}
 if(MODE==='web'&&'serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').then(()=>setTimeout(preCarregar,3000)).catch(()=>{});
-function iniciar(){carregar();if(gerar())gravarLocal();Sync.mostra('');render();if(MODE!=='local'&&!SY.token)pedirCodigo();else if(Sync.ativo())Sync.buscar();else{Sync.buscar();auto10()}}
+function iniciar(){carregar();if(gerar())gravarLocal();Sync.mostra('');if(Trava.ativo())Trava.bloquear();render();Trava.iniciar();if(MODE!=='local'&&!SY.token)pedirCodigo();else if(Sync.ativo())Sync.buscar();else{Sync.buscar();auto10()}}
 iniciar();
 
 </script>
