@@ -186,7 +186,7 @@ function carregar(){
   normalizar();
 }
 function gravarLocal(){try{localStorage.setItem(KEY,JSON.stringify(S));return true}catch(e){toast('NÃO FOI POSSÍVEL SALVAR NO NAVEGADOR');return false}}
-function save(){S.saved=Date.now();gravarLocal();Sync.agendar()}
+function save(){aplicar10();S.saved=Date.now();gravarLocal();Sync.agendar()}
 const brutoDe=r=>r.bruto!=null&&r.bruto!==''?+r.bruto:+r.valor||0;
 function normalizar(){ // preenche o bruto de holerites lançados antes desta versão
   for(const t of['A','F'])for(const r of S.rec){if(!r.hol||r.hol[0]!==t||r.bruto!=null||!r.conf||!r.conf.R)continue;
@@ -194,6 +194,20 @@ function normalizar(){ // preenche o bruto de holerites lançados antes desta ve
     if(t==='A'){const b=g(/^ADIANTAMENTO BRUTO/);if(b!=null)r.bruto=r2(b)}
     else{const tv=g(/^SOMA DOS VENCIMENTOS/),a=S.rec.find(x=>x.hol==='A|'+r.hol.slice(2)),ad=a&&a.bruto!=null?a.bruto:g(/^ADIANTAMENTO JÁ RECEBIDO/)!=null?g(/^ADIANTAMENTO JÁ RECEBIDO/)/(1-((S.cfg.hol&&S.cfg.hol.aliq)||27.5)/100):0;if(tv!=null)r.bruto=r2(tv-ad)}}
 }
+/* ---------- base dos 10% e despesa vinculada ---------- */
+function base10(m){ // salário entra pela competência da folha: bruto da folha + bruto do adiantamento dela
+  const R=S.rec.filter(r=>r.mes===m),ehA=r=>r.hol&&r.hol[0]==='A',bm=R.filter(r=>!ehA(r)).reduce((s,r)=>s+brutoDe(r),0);let ad=0,comps=[];
+  for(const r of R){if(!r.hol||r.hol[0]!=='F')continue;const a=S.rec.find(x=>x.hol==='A|'+r.hol.slice(2));if(a){ad+=brutoDe(a);comps.push(r.hol.slice(2))}}
+  const fora=R.filter(r=>ehA(r)&&!comps.includes(r.hol.slice(2))).map(r=>({comp:r.hol.slice(2),v:brutoDe(r)}));
+  return{bm:r2(bm),ad:r2(ad),comps,fora,base:r2(bm+ad),dez:r2((bm+ad)*.1),folha:R.some(r=>r.hol&&r.hol[0]==='F')}}
+function auto10(){const f=()=>JSON.stringify(S.desp.filter(d=>d.p10).map(d=>[d.id,d.valor,!!d.est10]))+(S.cfg.p10Ini||''),a=f();aplicar10();if(f()!==a)save()}
+function aplicar10(){
+  if(!S.desp.some(d=>d.p10)){const k=S.desp.find(d=>d.tipo==='fixa'&&/^D-{3,}$/.test(d.desc));if(k){const fk=fkey(k);S.desp.forEach(d=>{if(d.tipo==='fixa'&&fkey(d)===fk)d.p10=true});if(!S.cfg.p10Ini)S.cfg.p10Ini=mesHoje()}}
+  const ini=S.cfg.p10Ini;if(!ini)return;
+  const L=S.desp.filter(d=>d.p10).sort((a,b)=>a.mes.localeCompare(b.mes));let ant=null;
+  for(const d of L){if(d.mes>=ini&&d.status!=='Pago'&&!d.man10){const b=base10(d.mes);if(b.folha){d.valor=b.dez;d.est10=false}else if(ant!=null){d.valor=ant;d.est10=true}}ant=d.valor}
+}
+function vincular10(fk){S.desp.forEach(d=>{if(d.p10){delete d.p10;delete d.man10;delete d.est10}});if(fk)S.desp.forEach(d=>{if(d.tipo==='fixa'&&fkey(d)===fk)d.p10=true});if(!S.cfg.p10Ini)S.cfg.p10Ini=mesHoje()}
 function vazio(){return !S.desp.length&&!S.rec.length&&!S.inv.length}
 /* ---------- categorias ---------- */
 function classificar(desc){
@@ -244,7 +258,7 @@ function gerar(){
       if(!alive||!tpl)continue;
       if(stop(k,T)){alive=false;continue}
       if(skip(k,T))continue;
-      S.desp.push(Object.assign({},tpl,{id:uid(),mes:T,valor:k===RKEY?+S.cfg.reserva:tpl.valor,data:'',venc:shiftDate(tpl.venc,diffM(tpl.mes,T)),pagto:'',status:'Em aberto',auto:true,invId:undefined}));
+      S.desp.push(Object.assign({},tpl,{id:uid(),mes:T,valor:k===RKEY?+S.cfg.reserva:tpl.valor,data:'',venc:shiftDate(tpl.venc,diffM(tpl.mes,T)),pagto:'',status:'Em aberto',auto:true,invId:undefined,man10:undefined,est10:undefined}));
     }
   }
   // receitas que se repetem (aluguel, renda fixa etc.)
@@ -267,7 +281,7 @@ function setDesc(d,novo){
 }
 function setValor(d,v){
   d.valor=r2(v);const k=serieKey(d);
-  if(k&&k!==RKEY)for(const o of S.desp)if(o!==d&&o.auto&&o.mes>d.mes&&serieKey(o)===k)o.valor=d.valor;
+  if(k&&k!==RKEY&&!d.p10)for(const o of S.desp)if(o!==d&&o.auto&&o.mes>d.mes&&serieKey(o)===k)o.valor=d.valor;
 }
 function remover(d,modo){ // modo: 'um' | 'so' | 'fim'
   const k=serieKey(d);
@@ -453,7 +467,7 @@ function abrirProximo(){
   let M=mesesTodos().filter(m=>S.desp.some(d=>d.mes===m)).pop()||mesHoje();const Tn=addM(M,1);
   for(const d of S.desp.filter(d=>d.mes===M&&(d.tipo==='fixa'||d.tipo==='invest')&&!parc(d.desc))){
     const k=fkey(d);if(S.excl.some(e=>e.k===k&&e.fim&&Tn>=e.m))continue;if(S.desp.some(o=>o.mes===Tn&&fkey(o)===k))continue;
-    S.desp.push(Object.assign({},d,{id:uid(),mes:Tn,data:'',venc:shiftDate(d.venc,1),pagto:'',status:'Em aberto',auto:true,invId:undefined}))}
+    S.desp.push(Object.assign({},d,{id:uid(),mes:Tn,data:'',venc:shiftDate(d.venc,1),pagto:'',status:'Em aberto',auto:true,invId:undefined,man10:undefined,est10:undefined}))}
   if(Tn>S.hor)S.hor=Tn;gerar();save();ir('lanc',{mes:Tn});toast('MÊS '+mlabel(Tn)+' ABERTO');
 }
 async function excluir(d){
@@ -465,7 +479,8 @@ async function excluir(d){
 }
 function editar(d,f,val){
   if(f==='desc'){setDesc(d,val)}
-  else if(f==='valor'){const v=parseNum(val);if(isNaN(v)){toast('VALOR INVÁLIDO');return}setValor(d,Math.abs(v))}
+  else if(f==='valor'){if(d.p10&&String(val).trim()===''){delete d.man10;gerar();save();toast(d.status==='Pago'?'DESPESA PAGA: O VALOR NÃO É RECALCULADO':'VALOR VOLTOU AO CÁLCULO AUTOMÁTICO');return}
+    const v=parseNum(val);if(isNaN(v)){toast('VALOR INVÁLIDO');return}setValor(d,Math.abs(v));if(d.p10){d.man10=true;d.est10=false}}
   else if(f==='status'){d.status=val;d.pagto=val==='Pago'?(d.pagto||hoje()):''}
   else if(f==='pessoa'||f==='banco'||f==='obs')d[f]=up(val);
   else d[f]=val;
@@ -478,7 +493,7 @@ function vRec(){
   return '<div class="card"><div class="row"><label class="f">MÊS<select data-u="rMes">'+selMes(m,0,[addM(mesHoje(),1)])+'</select></label><button class="btn ok" data-a="rnovo">+ NOVA RECEITA</button><button class="btn sec" data-a="rcopia">COPIAR RECEITAS DO MÊS ANTERIOR</button></div></div>'+
   '<div class="card"><div class="tw"><table class="t resp"><colgroup><col><col style="width:115px"><col style="width:115px"><col style="width:130px"><col style="width:120px"><col style="width:120px"><col style="width:28px"></colgroup><thead><tr><th>DESCRIÇÃO</th><th>VALOR BRUTO</th><th>VALOR LÍQUIDO</th><th>PESSOA</th><th>DATA</th><th>REPETE TODO MÊS</th><th></th></tr></thead><tbody>'+
   (L.length?L.map(r=>'<tr><td data-l="DESCRIÇÃO" class="wide"><div class="row" style="flex-wrap:nowrap;gap:4px"><input data-rid="'+r.id+'" data-f="desc" value="'+esc(r.desc)+'" style="flex:1">'+(r.conf?'<button class="tag '+(r.conf.v?'d':'n')+'" style="border:0;cursor:pointer;white-space:nowrap" data-a="rconf" data-rid="'+r.id+'">'+(r.conf.v?'⚠ '+r.conf.v+' A VERIFICAR':'✔ CONFERIDO')+'</button>':'')+'</div></td><td data-l="VALOR BRUTO"><input class="v" data-rid="'+r.id+'" data-f="bruto" value="'+(r.bruto!=null?fmtN(r.bruto):'')+'" placeholder="'+fmtN(r.valor)+'" inputmode="decimal"></td><td data-l="VALOR LÍQUIDO"><input class="v" data-rid="'+r.id+'" data-f="valor" value="'+fmtN(r.valor)+'" inputmode="decimal"></td><td data-l="PESSOA"><input data-rid="'+r.id+'" data-f="pessoa" value="'+esc(r.pessoa)+'"></td><td data-l="DATA"><input type="date" data-rid="'+r.id+'" data-f="data" value="'+esc(r.data)+'"></td><td data-l="REPETE TODO MÊS"><input type="checkbox" style="width:auto;margin:4px 8px" data-rid="'+r.id+'" data-f="fixa"'+(r.fixa?' checked':'')+'></td><td class="xc"><button class="x" data-a="rdel" data-rid="'+r.id+'">×</button></td></tr>').join(''):'<tr><td colspan="7" style="padding:18px;text-align:center" class="mut">NENHUMA RECEITA EM '+mlabel(m)+'</td></tr>')+
-  '</tbody></table></div><div class="hint" style="margin-top:8px">Receita marcada em "repete todo mês" é lançada sozinha nos meses seguintes com o mesmo valor. Ao mudar o valor em um mês, os meses seguintes acompanham.</div><div class="hint">Valor bruto: antes dos descontos (INSS, IRRF etc.). Vem do holerite; nas outras receitas, deixe em branco se for igual ao líquido.</div><div class="tot"><div class="big" style="background:#16294a"><small>TOTAL BRUTO · '+mlabel(m)+'</small><span id="tot-bruto">'+fmt(bru)+'</span></div><div class="big" style="background:#c8642a"><small>DESCONTOS (INSS, IRRF ETC.)</small>'+fmt(bru-tot)+'</div><div class="big" style="background:#2e9d6b"><small>TOTAL LÍQUIDO · '+mlabel(m)+'</small><span id="tot-liq">'+fmt(tot)+'</span></div></div></div>';
+  '</tbody></table></div><div class="hint" style="margin-top:8px">Receita marcada em "repete todo mês" é lançada sozinha nos meses seguintes com o mesmo valor. Ao mudar o valor em um mês, os meses seguintes acompanham.</div><div class="hint">Valor bruto: antes dos descontos (INSS, IRRF etc.). Vem do holerite; nas outras receitas, deixe em branco se for igual ao líquido.</div><div class="tot"><div class="big" style="background:#16294a"><small>TOTAL BRUTO · '+mlabel(m)+'</small><span id="tot-bruto">'+fmt(bru)+'</span></div><div class="big" style="background:#c8642a"><small>DESCONTOS (INSS, IRRF ETC.)</small>'+fmt(bru-tot)+'</div><div class="big" style="background:#2e9d6b"><small>TOTAL LÍQUIDO · '+mlabel(m)+'</small><span id="tot-liq">'+fmt(tot)+'</span></div></div></div>'+quadro10(m);
 }
 /* ---------- categorias e backup ---------- */
 function vCfg(){
@@ -495,6 +510,19 @@ function exportCsv(){
   [...S.desp].sort((a,b)=>a.mes.localeCompare(b.mes)).forEach(d=>L.push([d.mes,q(d.desc),fmtN(d.valor).replace(/\./g,''),TIPOS[d.tipo],q(d.cat),q(d.pessoa),q(d.banco),d.data,d.venc,d.pagto,stEf(d),q(d.obs)].join(';')));
   L.push('','RECEITAS','MES;DESCRICAO;VALOR BRUTO;VALOR LIQUIDO;PESSOA;DATA');S.rec.forEach(r=>L.push([r.mes,q(r.desc),fmtN(brutoDe(r)).replace(/\./g,''),fmtN(r.valor).replace(/\./g,''),q(r.pessoa),r.data].join(';')));
   baixar('controle-despesas-'+hoje()+'.csv','﻿'+L.join('\r\n'),'text/csv;charset=utf-8');
+}
+function quadro10(m){
+  const b=base10(m),d=S.desp.find(x=>x.p10&&x.mes===m),series=[...new Map(S.desp.filter(x=>x.tipo==='fixa'&&!parc(x.desc)).map(x=>[fkey(x),x.desc])).entries()].sort((a,c)=>a[1].localeCompare(c[1])),atual=(S.desp.find(x=>x.p10)||{});
+  let st='';if(d){st=d.status==='Pago'?'<span class="tag n">PAGO: VALOR TRAVADO</span>':d.man10?'<span class="tag u">AJUSTADO À MÃO</span>':d.est10?'<span class="tag d">ESTIMATIVA: AGUARDANDO HOLERITE</span>':'<span class="tag n">AUTOMÁTICO</span>'}
+  const dif=d?r2(d.valor-b.dez):0;
+  return '<div class="card" id="q10"><h3>BASE DOS 10% · '+mlabel(m)+'</h3><div class="tot" style="margin-top:0">'+
+   '<div class="big" style="background:#4a5563"><small>BRUTO DO MÊS'+(b.fora.length?' (SEM ADIANT. DE OUTRA COMPETÊNCIA)':'')+'</small>'+fmt(b.bm)+'</div><div class="big" style="background:#4a5563"><small>+ BRUTO DO ADIANTAMENTO'+(b.comps.length?' ('+b.comps.map(c=>c.slice(5)+'/'+c.slice(0,4)).join(', ')+')':'')+'</small>'+fmt(b.ad)+'</div>'+
+   '<div class="big" style="background:#16294a"><small>= BASE</small><span id="q10-base">'+fmt(b.base)+'</span></div><div class="big" style="background:#6b7a3a"><small>10% DA BASE</small><span id="q10-dez">'+fmt(b.dez)+'</span></div></div>'+
+   (b.folha?'':'<div class="hint" style="margin-top:8px">A folha deste mês ainda não foi importada: a base está incompleta.</div>')+
+   b.fora.map(f=>'<div class="hint" style="margin-top:8px">O adiantamento '+f.comp.slice(5)+'/'+f.comp.slice(0,4)+' ('+fmt(f.v)+'), recebido neste mês, não entra nesta base: ele conta junto com a folha '+f.comp.slice(5)+'/'+f.comp.slice(0,4)+', no mês em que ela for paga. Assim o mesmo valor não entra duas vezes.</div>').join('')+
+   '<div class="row" style="margin-top:10px"><label class="f">DESPESA QUE RECEBE OS 10%<select data-a10="1">'+opt('','(NENHUMA)',atual.p10?fkey(atual):'')+series.map(([k,n])=>opt(k,n,atual.p10?fkey(atual):'')).join('')+'</select></label>'+
+   (d?'<span>VALOR NA DESPESA EM '+mlabel(m)+': <b id="q10-desp">'+fmt(d.valor)+'</b> '+st+(Math.abs(dif)>.005&&b.folha?' <span class="mut">('+(dif>0?'+':'−')+fmt(Math.abs(dif)).replace('-','')+' EM RELAÇÃO AOS 10%)</span>':'')+'</span>':'<span class="mut">ESTA DESPESA NÃO EXISTE EM '+mlabel(m)+'</span>')+'</div>'+
+   '<div class="hint" style="margin-top:6px">O valor da despesa é preenchido sozinho enquanto ela estiver em aberto. Depois de paga, fica travado. Você pode digitar outro valor em Lançamentos; para voltar ao automático, apague o valor do campo.</div></div>';
 }
 
 /* ---------- leitura de arquivos ---------- */
@@ -805,13 +833,15 @@ const Sync={t:null,est:'',ocupado:false,
     try{const j=await this.chamar('get');const d=j&&j.dados?(typeof j.dados==='string'?JSON.parse(j.dados):j.dados):null;
       if(d&&d.desp&&(+d.saved||0)>(+S.saved||0)){S=Object.assign(novoEstado(),d,{cfg:Object.assign(novoEstado().cfg,d.cfg||{})});normalizar();gravarLocal();if(!document.querySelector('#modal[style*="flex"]'))render()}
       else if((+S.saved||0)>((d&&+d.saved)||0)&&!vazio()){await this.enviar();return}
-      this.mostra('ok')}catch(e){this.mostra(navigator.onLine?'err':'off')}}
+      this.mostra('ok');auto10()}catch(e){this.mostra(navigator.onLine?'err':'off')}}
 };
 async function pedirCodigo(){const r=await modal('CÓDIGO DE ACESSO','<label class="f">DIGITE O CÓDIGO DE ACESSO DESTE APP<input type="password" name="tok" autocomplete="off"></label><div class="hint" style="margin-top:6px">É o código que você definiu no Apps Script. Fica guardado só neste aparelho.</div>',[['ENTRAR','1','ok']]);SY.token=(r.dados.tok||'').trim();try{localStorage.setItem(KEY+'-sync',JSON.stringify(SY))}catch(e){}Sync.buscar()}
 
 /* ---------- holerite: leitura do PDF, conferência e lançamento em receitas ---------- */
-const HP0={base:0,peric:0,dep:0,dedDep:189.59,aliq:27.5,parc:908.73,pctAd:40,sind:0,va:0,inss:'1621:7,5; 2902,84:9; 4354,27:12; 8475,55:14'};
-const HPL={base:'SALÁRIO BASE (R$)',peric:'PERICULOSIDADE (%)',dep:'Nº DE DEPENDENTES',dedDep:'DEDUÇÃO POR DEPENDENTE (R$)',aliq:'ALÍQUOTA DO IRRF (%)',parc:'PARCELA A DEDUZIR DO IRRF (R$)',pctAd:'ADIANTAMENTO (% DO SALÁRIO BASE)',sind:'SINDICATO (R$)',va:'VALE-ALIMENTAÇÃO DEPOSITADO NO MÊS (R$)'};
+const HP0={base:0,peric:0,dep:0,dedDep:189.59,aliq:27.5,parc:908.73,pctAd:40,sind:0,vaDia:0,cafeDia:0,assid:0,inss:'1621:7,5; 2902,84:9; 4354,27:12; 8475,55:14'};
+const HPL={base:'SALÁRIO BASE (R$)',peric:'PERICULOSIDADE (%)',dep:'Nº DE DEPENDENTES',dedDep:'DEDUÇÃO POR DEPENDENTE (R$)',aliq:'ALÍQUOTA DO IRRF (%)',parc:'PARCELA A DEDUZIR DO IRRF (R$)',pctAd:'ADIANTAMENTO (% DO SALÁRIO BASE)',sind:'SINDICATO (R$)',vaDia:'VALE-ALIMENTAÇÃO POR DIA ÚTIL (R$)',cafeDia:'CAFÉ POR DIA ÚTIL (R$)',assid:'ASSIDUIDADE SEM FALTAS (R$)'};
+function diasUteis(a,b){let n=0;if(!a||!b||a>b)return 0;for(let d=a,i=0;d<=b&&i<400;d=addD(d,1),i++){const w=new Date(d+'T12:00:00').getDay();if(w>0&&w<6)n++}return n}
+function vaComp(comp){const o=(S.cfg.holVA||{})[comp]||{},ini=o.ini||comp+'-16',fim=o.fim||addM(comp,1)+'-15',sug=diasUteis(ini,fim);return{ini,fim,sug,dias:o.dias!=null?o.dias:sug,manual:o.dias!=null&&o.dias!==sug,va:o.va,cafe:o.cafe,assid:o.assid,diasInf:o.dias}}
 const HP=()=>Object.assign({},HP0,S.cfg.hol||{});
 const reMoeda=/^-?\d{1,3}(?:\.\d{3})*,\d{2,3}$|^-?\d+,\d{2,3}$/;
 function lerHolerite(L,arq){
@@ -830,7 +860,7 @@ function lerHolerite(L,arq){
   return{arq,tipo,comp,itens,bruto,pagto:dp?dp[3]+'-'+dp[2]+'-'+dp[1]:'',totV:tt[0],totD:tt[1],liq:lq,baseRodape:bs[0],baseFgts:bs[2],baseIr:bs[5]};
 }
 function inssTabela(v,txt){let prev=0,t=0;for(const f of String(txt).split(';')){const[a,p]=f.split(':').map(parseNum);if(isNaN(a)||isNaN(p))continue;if(v>prev)t+=(Math.min(v,a)-prev)*p/100;prev=a}return r2(t)}
-function conferirHolerite(H,P,adLiq){
+function conferirHolerite(H,P,adLiq,V){
   const R=[],usados=new Set(),soma=(re,k)=>H.itens.filter(o=>re.test(norm(o.desc))&&o[k]).reduce((s,o)=>{usados.add(o);return s+o[k]},0);
   const add=(item,esp,hol,tol,nota)=>{const semEsp=esp==null,dif=semEsp?0:r2(hol-esp);R.push({item,esp:semEsp?null:r2(esp),hol:r2(hol),st:semEsp?'av':Math.abs(dif)<=.011?'ok':Math.abs(dif)<=(tol||0)+.001?'arr':'ver',nota:nota||''})};
   const sv=r2(H.itens.reduce((s,o)=>s+o.v,0)),sd=r2(H.itens.reduce((s,o)=>s+o.d,0)),al=P.aliq/100;
@@ -847,7 +877,13 @@ function conferirHolerite(H,P,adLiq){
     if(P.peric||per)add('PERICULOSIDADE ('+fmtN(P.peric)+'%)',base*P.peric/100,per);
     add('INSS (TABELA PROGRESSIVA, COM TETO)',inssTabela(trib,P.inss),inss,.05,'BASE: '+fmt(trib));
     add('IRRF TOTAL (FOLHA + ADIANTAMENTO)',Math.max(0,(trib-inss-P.dep*P.dedDep)*al-P.parc),ir,0,'BASE: '+fmt(trib-inss-P.dep*P.dedDep)+' (TRIBUTÁVEL − INSS − '+P.dep+' DEPENDENTE(S))');
-    if(vaD||P.va)add('DESCONTO ALIMENTAÇÃO (20% DO VA)',P.va?P.va*.2:null,vaD,0,P.va?'VA INFORMADO: '+fmt(P.va):'EQUIVALE A UM VA DE '+fmt(vaD/.2)+'; INFORME O VA DEPOSITADO PARA CONFERIR');
+    if(V){const per='UTILIZAÇÃO DE '+dlabel(V.ini).slice(0,5)+' A '+dlabel(V.fim).slice(0,5)+' · '+V.dias+' DIAS ÚTEIS'+(V.manual?' (INFORMADO POR VOCÊ; SUGERIDO: '+V.sug+')':' (SUGERIDO)');
+      const vaE=P.vaDia?r2(P.vaDia*V.dias):null,cfE=P.cafeDia?r2(P.cafeDia*V.dias):null,inf=(item,esp,nota)=>R.push({item,esp,hol:null,st:'av',nota});
+      if(P.vaDia||V.va!=null){const it='VALE-ALIMENTAÇÃO DEPOSITADO ('+fmtN(P.vaDia)+' × '+V.dias+' DIAS)';V.va!=null?add(it,vaE,V.va,0,per):inf(it,vaE,'INFORME O VALOR DEPOSITADO · '+per)}
+      if(P.cafeDia||V.cafe!=null){const it='CAFÉ DEPOSITADO ('+fmtN(P.cafeDia)+' × '+V.dias+' DIAS)';V.cafe!=null?add(it,cfE,V.cafe,0,per):inf(it,cfE,'INFORME O VALOR DEPOSITADO · '+per)}
+      if(vaD||vaE!=null)add('DESCONTO ALIMENTAÇÃO NO HOLERITE (20% DO VA ESPERADO)',vaE!=null?vaE*.2:null,vaD,0,vaE==null?'EQUIVALE A UM VA DE '+fmt(vaD/.2)+'; INFORME O VA POR DIA NOS PARÂMETROS':'O CAFÉ NÃO ENTRA NO DESCONTO');
+      if(P.assid||V.assid!=null){const temFalta=H.itens.some(o=>/FALTA/.test(norm(o.desc))&&o.d),esp=temFalta?null:(P.assid||null),nt=temFalta?'HÁ FALTA NO HOLERITE: AVALIE O VALOR':'SEM FALTA NO HOLERITE';V.assid!=null?add('ASSIDUIDADE DEPOSITADA',esp,V.assid,0,nt):inf('ASSIDUIDADE DEPOSITADA',esp,'INFORME O VALOR DEPOSITADO · '+nt)}
+    }
     const adEsp=adLiq!=null?adLiq:base?r2(base*P.pctAd/100)-r2(base*P.pctAd/100*al):null;
     if(adD||adEsp)add('ADIANTAMENTO JÁ RECEBIDO (DESCONTADO)',adEsp,adD,0,adLiq!=null?'LÍQUIDO DO HOLERITE DE ADIANTAMENTO '+H.comp.slice(5)+'/'+H.comp.slice(0,4):'CALCULADO: '+fmtN(P.pctAd)+'% DO BASE MENOS IRRF');
     if(sind||P.sind)add('SINDICATO',P.sind||null,sind);
@@ -859,18 +895,22 @@ function conferirHolerite(H,P,adLiq){
   return R;
 }
 const HST={ok:['CONFERE','n'],arr:['CONFERE (ARREDONDAMENTO)','n'],ver:['VERIFICAR','d'],av:['AVALIAR','u']};
-function tabelaConf(R){return '<table class="t"><colgroup><col><col style="width:110px"><col style="width:110px"><col style="width:90px"><col style="width:170px"></colgroup><thead><tr><th>ITEM</th><th>ESPERADO</th><th>HOLERITE</th><th>DIFERENÇA</th><th>SITUAÇÃO</th></tr></thead><tbody>'+
-  R.map(r=>'<tr><td style="padding:5px 4px"><b>'+esc(r.item)+'</b>'+(r.nota?'<div class="hint">'+esc(r.nota)+'</div>':'')+'</td><td style="text-align:right">'+(r.esp==null?'—':fmtN(r.esp))+'</td><td style="text-align:right;font-weight:700">'+fmtN(r.hol)+'</td><td style="text-align:right" class="'+(r.st==='ver'?'neg':'')+'">'+(r.esp==null?'—':fmtN(r.hol-r.esp))+'</td><td><span class="tag '+HST[r.st][1]+'">'+HST[r.st][0]+'</span></td></tr>').join('')+'</tbody></table>'}
+function tabelaConf(R){return '<table class="t"><colgroup><col><col style="width:110px"><col style="width:110px"><col style="width:90px"><col style="width:170px"></colgroup><thead><tr><th>ITEM</th><th>ESPERADO</th><th>HOLERITE / REAL</th><th>DIFERENÇA</th><th>SITUAÇÃO</th></tr></thead><tbody>'+
+  R.map(r=>'<tr><td style="padding:5px 4px"><b>'+esc(r.item)+'</b>'+(r.nota?'<div class="hint">'+esc(r.nota)+'</div>':'')+'</td><td style="text-align:right">'+(r.esp==null?'—':fmtN(r.esp))+'</td><td style="text-align:right;font-weight:700">'+(r.hol==null?'—':fmtN(r.hol))+'</td><td style="text-align:right" class="'+(r.st==='ver'?'neg':'')+'">'+(r.esp==null||r.hol==null?'—':fmtN(r.hol-r.esp))+'</td><td><span class="tag '+HST[r.st][1]+'">'+HST[r.st][0]+'</span></td></tr>').join('')+'</tbody></table>'}
 const holNome=H=>(H.tipo==='A'?'ADIANTAMENTO':H.tipo==='F'?'SALÁRIO (FOLHA':'PAGAMENTO')+(H.tipo==='F'?' '+H.comp.slice(5)+'/'+H.comp.slice(0,4)+')':' ('+H.comp.slice(5)+'/'+H.comp.slice(0,4)+')');
 function recalcHol(){const st=U.imp.st;if(!st||!st.hol)return;const P=HP();st.hol.sort((a,b)=>a.H.comp.localeCompare(b.H.comp)||(a.H.tipo==='A'?-1:1));
-  for(const x of st.hol){const k='A|'+x.H.comp,lote=st.hol.find(y=>y.H.tipo==='A'&&y.H.comp===x.H.comp),ja=S.rec.find(r=>r.hol===k);x.R=conferirHolerite(x.H,P,x.H.tipo==='F'?(lote?lote.H.liq:ja?ja.valor:null):null);x.ja=S.rec.some(r=>r.hol===x.H.tipo+'|'+x.H.comp)}}
+  for(const x of st.hol){const k='A|'+x.H.comp,lote=st.hol.find(y=>y.H.tipo==='A'&&y.H.comp===x.H.comp),ja=S.rec.find(r=>r.hol===k);x.V=x.H.tipo==='F'?vaComp(x.H.comp):null;x.R=conferirHolerite(x.H,P,x.H.tipo==='F'?(lote?lote.H.liq:ja?ja.valor:null):null,x.V);x.ja=S.rec.some(r=>r.hol===x.H.tipo+'|'+x.H.comp)}}
+function blocoVA(comp,V){const i=(k,l,v,ph,tp)=>'<label class="f">'+l+'<input '+(tp?'type="'+tp+'" ':'inputmode="decimal" ')+'data-hv="'+comp+'" data-k="'+k+'" value="'+esc(v)+'"'+(ph?' placeholder="'+ph+'"':'')+'></label>',n=v=>v!=null?fmtN(v):'';
+  return '<div style="border:1px solid #e1e6ed;border-radius:10px;padding:10px;margin:8px 0"><b style="font-size:11px;color:#16294a">VALE-ALIMENTAÇÃO DA COMPETÊNCIA '+comp.slice(5)+'/'+comp.slice(0,4)+'</b><div class="fg hp" style="margin-top:6px">'+
+   i('ini','UTILIZAÇÃO: INÍCIO',V.ini,'','date')+i('fim','UTILIZAÇÃO: FIM',V.fim,'','date')+i('dias','DIAS ÚTEIS (SUGERIDO: '+V.sug+')',V.diasInf!=null?V.diasInf:'',String(V.sug))+
+   i('va','VA DEPOSITADO (R$)',n(V.va),'0,00')+i('cafe','CAFÉ DEPOSITADO (R$)',n(V.cafe),'0,00')+i('assid','ASSIDUIDADE DEPOSITADA (R$)',n(V.assid),'0,00')+'</div><div class="hint" style="margin-top:6px">Dias úteis em branco = usa a sugestão (segunda a sexta no período; feriados não são descontados). O número que você digitar vale só para esta competência.</div></div>'}
 function formHol(){const P=HP(),st=U.imp.st;
   let h='<div class="card"><h3>HOLERITE EM PDF (ADIANTAMENTO E FOLHA MENSAL)</h3><input type="file" id="hol-file" accept=".pdf" multiple><div class="hint" style="margin-top:8px">Pode enviar os dois de uma vez. O PDF é lido aqui no navegador. O líquido de cada um é lançado em Receitas no mês da data de pagamento.</div></div>';
   if(st&&st.hol)h+=st.hol.map((x,i)=>{const H=x.H,nv=x.R.filter(r=>r.st==='ver').length,na=x.R.filter(r=>r.st==='av').length;
     return '<div class="card"><div class="row" style="justify-content:space-between;margin-bottom:8px"><h3 style="margin:0"><input type="checkbox" data-hi="'+i+'"'+(x.on?' checked':'')+' style="width:auto"> '+esc(holNome(H))+' · BRUTO '+fmt(H.bruto)+' · LÍQUIDO '+fmt(H.liq)+'</h3><div class="row"><span class="mut">PAGO EM '+dlabel(H.pagto)+'</span><label class="f">LANÇAR EM<select data-hm="'+i+'">'+selMes(x.mes,0,[x.mes])+'</select></label>'+(x.ja?'<span class="tag u">JÁ LANÇADO: SERÁ ATUALIZADO</span>':'<span class="tag n">NOVO</span>')+'</div></div>'+
-     '<div class="aviso '+(nv?'red':na?'org':'blue')+'"><span>'+(nv?'⚠ '+nv+' ITEM(NS) A VERIFICAR COM A EMPRESA':'✔ CÁLCULOS CONFEREM')+(na?' · '+na+' ITEM(NS) PARA VOCÊ AVALIAR':'')+'</span></div><div class="tw">'+tabelaConf(x.R)+'</div></div>'}).join('')+
+     '<div class="aviso '+(nv?'red':na?'org':'blue')+'"><span>'+(nv?'⚠ '+nv+' ITEM(NS) A VERIFICAR COM A EMPRESA':'✔ CÁLCULOS CONFEREM')+(na?' · '+na+' ITEM(NS) PARA VOCÊ AVALIAR':'')+'</span></div>'+(x.V?blocoVA(H.comp,x.V):'')+'<div class="tw">'+tabelaConf(x.R)+'</div></div>'}).join('')+
     '<div class="card"><div class="row"><button class="btn ok" data-a="hol-gravar">LANÇAR EM RECEITAS</button><button class="btn sec" data-a="imp-cancela">CANCELAR</button></div></div>';
-  h+='<div class="card"><h3>PARÂMETROS DA CONFERÊNCIA</h3><div class="fg hp">'+Object.keys(HPL).map(k=>'<label class="f">'+HPL[k]+'<input data-hp="'+k+'" value="'+(k==='dep'?P[k]:fmtN(P[k]))+'"></label>').join('')+'<label class="f wall">FAIXAS DO INSS (LIMITE:ALÍQUOTA %; A ÚLTIMA É O TETO)<input data-hp="inss" class="nocaps" value="'+esc(P.inss)+'"></label></div><div class="hint" style="margin-top:8px">Mesma lógica da planilha "Cálculo base Contracheque". O IRRF usa alíquota e parcela a deduzir de uma única faixa (a sua). Atualize quando mudar salário, tabela do INSS ou do IR. O vale-alimentação muda todo mês (dias úteis).</div></div>';
+  h+='<div class="card"><h3>PARÂMETROS DA CONFERÊNCIA</h3><div class="fg hp">'+Object.keys(HPL).map(k=>'<label class="f">'+HPL[k]+'<input data-hp="'+k+'" value="'+(k==='dep'?P[k]:fmtN(P[k]))+'" inputmode="decimal"></label>').join('')+'<label class="f wall">FAIXAS DO INSS (LIMITE:ALÍQUOTA %; A ÚLTIMA É O TETO)<input data-hp="inss" class="nocaps" value="'+esc(P.inss)+'"></label></div><div class="hint" style="margin-top:8px">Mesma lógica da planilha "Cálculo base Contracheque". O IRRF usa alíquota e parcela a deduzir de uma única faixa (a sua). Atualize quando mudar salário, tabela do INSS ou do IR, e os valores por dia e a assiduidade a cada dissídio.</div></div>';
   return h;
 }
 async function lerHolArquivos(files){
@@ -883,7 +923,8 @@ async function gravarHol(){
   const nv=sel.reduce((s,x)=>s+x.R.filter(r=>r.st==='ver').length,0);
   if(!await confirma('LANÇAR EM RECEITAS',sel.map(x=>esc(holNome(x.H))+' · <b>'+fmt(x.H.liq)+'</b> EM '+mlabel(x.mes)).join('<br>')+(nv?'<br><b class="neg">HÁ '+nv+' ITEM(NS) A VERIFICAR. LANÇAR MESMO ASSIM?</b>':''),'LANÇAR','ok'))return;
   for(const x of sel){const H=x.H,k=H.tipo+'|'+H.comp,conf={v:x.R.filter(r=>r.st==='ver').length,a:x.R.filter(r=>r.st==='av').length,R:x.R};let r=S.rec.find(o=>o.hol===k);
-    if(!r){r={id:uid(),pessoa:S.cfg.nome||'',fixa:false,hol:k};S.rec.push(r)}Object.assign(r,{mes:x.mes,desc:holNome(H),valor:r2(H.liq),bruto:H.bruto,data:H.pagto,conf})}
+    if(!r){r={id:uid(),pessoa:S.cfg.nome||'',fixa:false,hol:k};S.rec.push(r)}Object.assign(r,{mes:x.mes,desc:holNome(H),valor:r2(H.liq),bruto:H.bruto,data:H.pagto,conf});if(x.V)r.va={ini:x.V.ini,fim:x.V.fim,dias:x.V.dias}}
+  gerar();
   save();const m=sel[sel.length-1].mes;U.imp.st=null;U.semBoasVindas=1;U.rMes=m;ir('rec');toast(sel.length+' RECEITA(S) LANÇADA(S)');
 }
 
@@ -954,6 +995,8 @@ document.addEventListener('change',async ev=>{
   if(ds.hm!=null){U.imp.st.hol[+ds.hm].mes=t.value;return}
   if(t.id==='bk-file'&&t.files[0]){try{const o=JSON.parse(decodificar(await lerBuf(t.files[0])));if(!o||!Array.isArray(o.desp))throw 0;
       if(await confirma('RESTAURAR BACKUP','SUBSTITUIR OS DADOS ATUAIS PELO BACKUP ('+o.desp.length+' LANÇAMENTOS, '+(o.rec||[]).length+' RECEITAS)?','RESTAURAR','ok')){S=Object.assign(novoEstado(),o,{cfg:Object.assign(novoEstado().cfg,o.cfg||{})});normalizar();gerar();save();U.semBoasVindas=1;ir('lanc',{mes:mesHoje()});toast('BACKUP RESTAURADO')}}catch(e){toast('ARQUIVO DE BACKUP INVÁLIDO')}return}
+  if(ds.a10){vincular10(t.value);gerar();save();render();toast(t.value?'DESPESA VINCULADA AOS 10%':'VÍNCULO REMOVIDO');return}
+  if(ds.hv){S.cfg.holVA=S.cfg.holVA||{};const o=S.cfg.holVA[ds.hv]=S.cfg.holVA[ds.hv]||{},k=ds.k;if(k==='ini'||k==='fim'){if(t.value)o[k]=t.value;else delete o[k]}else{const v=parseNum(t.value);if(t.value.trim()===''||isNaN(v)||v<0)delete o[k];else o[k]=k==='dias'?Math.round(v):r2(v)}save();recalcHol();render();return}
   if(ds.u){U[ds.u]=ds.u==='pPer'?+t.value:t.value;render();return}
   if(ds.ff&&ds.ff!=='q'){U.f[ds.ff]=t.value;U.f.ids=null;render();return}
   if(ds.id&&ds.f){const d=S.desp.find(x=>x.id===ds.id);if(d){editar(d,ds.f,t.value);setTimeout(()=>refoco(render),0)}return}
@@ -989,7 +1032,7 @@ window.addEventListener('offline',()=>{if(Sync.ativo())Sync.mostra('off')});
 /* ---------- início ---------- */
 function preCarregar(){if(MODE!=='web'||!navigator.onLine)return;for(const u of[CDN_XLSX,'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs','https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs'])fetch(u).catch(()=>{})}
 if(MODE==='web'&&'serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').then(()=>setTimeout(preCarregar,3000)).catch(()=>{});
-function iniciar(){carregar();if(gerar())gravarLocal();Sync.mostra('');render();if(MODE!=='local'&&!SY.token)pedirCodigo();else Sync.buscar()}
+function iniciar(){carregar();if(gerar())gravarLocal();Sync.mostra('');render();if(MODE!=='local'&&!SY.token)pedirCodigo();else if(Sync.ativo())Sync.buscar();else{Sync.buscar();auto10()}}
 iniciar();
 
 </script>
